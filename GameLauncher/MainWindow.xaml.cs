@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -16,7 +17,7 @@ namespace GameLauncher
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const string VERSION_URL = "https://pub-dd7bff491d404728990afee779fd43a1.r2.dev/version.json"; // R2 linki!
+        private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki!
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
 
@@ -73,11 +74,28 @@ namespace GameLauncher
                     return;
                 }
 
-                var updateNeeded = await CheckForUpdateAsync();
+                UpdateCheckResult updateResult = await CheckForUpdatesAsync();
 
-                if (updateNeeded)
+                if (updateResult.IsMandatory)
                 {
                     await DownloadAndInstallUpdateAsync();
+                }
+                else if (updateResult.UpdateNeeded)
+                {
+                    var result = MessageBox.Show(
+                        "Yeni bir güncelleme mevcut. Güncelleme yapmak ister misiniz?",
+                        "Güncelleme Mevcut",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        await DownloadAndInstallUpdateAsync();
+                    }
+                    else
+                    {
+                        UpdateStatus("Güncelleme atlandı, hazır!", showSpinner: false);
+                        await Task.Delay(500);
+                    }
                 }
                 else
                 {
@@ -262,15 +280,26 @@ namespace GameLauncher
             try
             {
                 UpdateStatus("İnternet bağlantısı kontrol ediliyor...", showSpinner: true);
-                // Çok hızlı bir istek atılır ve yanıt dönüp dönmediği kontrol edilir.
-                // Tam bir GET gibi çalışıp tüm içeriği indirmez!
+
                 var request = new HttpRequestMessage(HttpMethod.Head, VERSION_URL);
-                // Header'ı aldığın ana işlemi tamamla bitir!
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                var errorDetails = $"Hata: {ex.Message}\n\n";
+                if (ex.InnerException != null)
+                {
+                    errorDetails += $"Inner Exception: {ex.InnerException.Message}\n\n";
+                    if (ex.InnerException.InnerException != null)
+                    {
+                        errorDetails += $"Inner Inner: {ex.InnerException.InnerException.Message}";
+                    }
+                }
+
+                MessageBox.Show(errorDetails, "Bağlantı Hatası",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+
                 return false;
             }
         }
@@ -284,14 +313,13 @@ namespace GameLauncher
 
             if (appExists)
             {
-                // SENARYO 1: Oyun yüklü ama internet yok -> UYARI verip oyunu açıyoruz.
                 MessageBox.Show(
                     "İnternet bağlantısı bulunamadı.\n\n" +
                     "Güncellemeler kontrol edilemedi ancak uygulamanın yüklü bir sürümü bulundu.\n" +
                     "Uygulama Çevrimdışı (Offline) modda başlatılıyor.",
                     "Çevrimdışı Mod", // Başlık düzeltildi
                     MessageBoxButton.OK,
-                    MessageBoxImage.Warning // Hata değil, Uyarı ikonu daha doğru
+                    MessageBoxImage.Warning
                 );
 
                 try
@@ -307,31 +335,31 @@ namespace GameLauncher
             }
             else
             {
-                // SENARYO 2: Oyun hiç yüklü değil ve internet yok -> HATA verip kapatıyoruz.
                 MessageBox.Show(
                     "İnternet bağlantısı bulunamadı.\n\n" +
                     "Uygulamanın çalışabilmesi için ilk kurulumun yapılması gerekmektedir.\n" +
                     "Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
-                    "Bağlantı Gerekli", // Başlık düzeltildi
+                    "Bağlantı Gerekli",
                     MessageBoxButton.OK,
-                    MessageBoxImage.Error // Bu bir hata, çünkü oyun açılamıyor.
+                    MessageBoxImage.Error
                 );
 
                 Application.Current.Shutdown();
             }
         }
 
-        private async Task<bool> CheckForUpdateAsync()
+        private async Task<UpdateCheckResult> CheckForUpdatesAsync()
         {
+            UpdateStatus("Güncelleme kontrol ediliyor...", showSpinner: true);
 
-            UpdateStatus("Güncellemeler kontrol ediliyor...", showSpinner: true);
-
+            // Sunucudan version.json çek
             var serverJson = await _httpClient.GetStringAsync(VERSION_URL);
             var serverVersion = JsonSerializer.Deserialize<VersionInfo>(serverJson, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
 
+            // Yerel version.json'ı oku
             VersionInfo localVersion = null;
             if (File.Exists(_localVersionFile))
             {
@@ -342,28 +370,37 @@ namespace GameLauncher
                 });
             }
 
+            // Ana exe var mı kontrol et
             var mainExePath = Path.Combine(_appDirectory, MAIN_EXE);
-            // İlk kurulum...
             if (!File.Exists(mainExePath))
             {
-                return true;
-            }
-            // version.json dosyamız yoksa'da güncelleme gerekli.
-            if (localVersion == null)
-            {
-                return true;
+                // İlk kurulum - güncelleme gerek
+                return new UpdateCheckResult { UpdateNeeded = true, IsMandatory = true };
             }
 
-            // Version sınıfı karşılaştırmanın doğru olması için gereklidir.
+            if (localVersion == null)
+            {
+                return new UpdateCheckResult { UpdateNeeded = true, IsMandatory = true };
+            }
+
             var local = new Version(localVersion.Version);
             var server = new Version(serverVersion.Version);
 
+            bool belowMinimum = false;
+            if (!string.IsNullOrEmpty(serverVersion.MinimumVersion))
+            {
+                var minimum = new Version(serverVersion.MinimumVersion);
+                belowMinimum = local < minimum;
+            }
+
+            bool updateAvailable = server > local;
+            bool isMandatory = serverVersion.Mandatory || belowMinimum;
+
             Dispatcher.Invoke(() =>
             {
-                if (server > local)
+                if (updateAvailable)
                 {
                     VersionText.Text = $"v{localVersion.Version} → v{serverVersion.Version}";
-
                 }
                 else
                 {
@@ -371,7 +408,42 @@ namespace GameLauncher
                 }
             });
 
-            return server > local;
+            if (updateAvailable)
+            {
+                if (isMandatory)
+                {
+                    string message;
+                    if (belowMinimum)
+                    {
+                        message = $"Mevcut sürümünüz (v{localVersion.Version}) artık desteklenmiyor.\n\n" +
+                                $"Minimum desteklenen sürüm: v{serverVersion.MinimumVersion}\n" +
+                                $"Yeni sürüm: v{serverVersion.Version}\n\n" +
+                                "Uygulamayı kullanmak için güncelleme zorunludur.";
+                    }
+                    else
+                    {
+                        message = $"Kritik bir güncelleme yayınlandı (v{serverVersion.Version}).\n\n" +
+                                "Bu güncelleme uygulamayı kullanmak için zorunludur.\n" +
+                                "Güncelleme otomatik olarak başlatılacak.";
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        MessageBox.Show(message, "Zorunlu Güncelleme",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                    });
+                }
+                else
+                {
+                    UpdateStatus($"Yeni sürüm bulundu: v{serverVersion.Version}", showSpinner: true);
+                }
+            }
+
+            return new UpdateCheckResult
+            {
+                UpdateNeeded = updateAvailable,
+                IsMandatory = isMandatory
+            };
         }
 
         private void LaunchMainApplication()
@@ -460,5 +532,12 @@ namespace GameLauncher
         public string Sha256 { get; set; }
         public long Size { get; set; }
         public bool Mandatory { get; set; }
+        public string MinimumVersion { get; set; }
+    }
+
+    public class UpdateCheckResult
+    {
+        public bool UpdateNeeded { get; set; }
+        public bool IsMandatory { get; set; }
     }
 }
