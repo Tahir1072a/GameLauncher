@@ -1,4 +1,4 @@
-﻿<Window x:Class="AppLauncher.MainWindow"
+﻿<Window x:Class="GameLauncher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Launcher" 
@@ -71,22 +71,6 @@
             <Setter Property="Foreground" Value="#4CAF50"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Height" Value="8"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ProgressBar">
-                        <Grid>
-                            <Border x:Name="PART_Track" 
-                                    Background="{TemplateBinding Background}" 
-                                    CornerRadius="4"/>
-                            <Border x:Name="PART_Indicator" 
-                                    Background="{TemplateBinding Foreground}" 
-                                    CornerRadius="4"
-                                    HorizontalAlignment="Left"
-                                    Width="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Value, Converter={StaticResource ProgressToWidthConverter}}"/>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
         </Style>
     </Window.Resources>
 
@@ -111,7 +95,7 @@
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
                     <Ellipse Width="10" Height="10" Fill="#4CAF50" Margin="0,0,10,0"/>
-                    <TextBlock Text="UYGULAMA BAŞLATICI" 
+                    <TextBlock Text="APP LAUNCHER" 
                                Foreground="#CCCCCC" 
                                VerticalAlignment="Center" 
                                FontWeight="SemiBold"
@@ -129,7 +113,7 @@
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
 
                     <!-- Logo Area -->
-                    <Border Width="180" Height="180" 
+                    <Border Width="0" Height="180" 
                             Background="#252530" 
                             CornerRadius="90" 
                             Margin="0,0,0,40"
