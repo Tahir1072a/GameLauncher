@@ -9,6 +9,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Assets\background.png" />
+    <None Remove="Assets\bottom.png" />
+    <None Remove="Assets\close.png" />
+    <None Remove="Assets\Fonts\Inter-VariableFont_opsz,wght.ttf" />
+    <None Remove="Assets\logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\background.png" />
+    <Resource Include="Assets\bottom.png" />
+    <Resource Include="Assets\close.png" />
+    <Resource Include="Assets\Fonts\Inter-VariableFont_opsz,wght.ttf" />
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\retry.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 

@@ -44,25 +44,25 @@ namespace GameLauncher
 
         private void InitializeSpinnerAnimation()
         {
-            var rotation = new DoubleAnimation
-            {
-                From = 0,
-                To = 360,
-                Duration = new Duration(TimeSpan.FromSeconds(1)),
-                RepeatBehavior = RepeatBehavior.Forever
-            };
+            //var rotation = new DoubleAnimation
+            //{
+            //    From = 0,
+            //    To = 360,
+            //    Duration = new Duration(TimeSpan.FromSeconds(1)),
+            //    RepeatBehavior = RepeatBehavior.Forever
+            //};
 
-            _spinnerAnimation = new Storyboard();
-            _spinnerAnimation.Children.Add(rotation);
-            Storyboard.SetTarget(rotation, SpinnerRotation);
-            Storyboard.SetTargetProperty(rotation, new PropertyPath("Angle"));
+            //_spinnerAnimation = new Storyboard();
+            //_spinnerAnimation.Children.Add(rotation);
+            //Storyboard.SetTarget(rotation, SpinnerRotation);
+            //Storyboard.SetTargetProperty(rotation, new PropertyPath("Angle"));
         }
 
         private async Task InitializeAsync()
         {
             try
             {
-                UpdateStatus("Başlatılıyor...", showSpinner: true);
+                UpdateStatus("Başlatılıyor...");
 
                 Directory.CreateDirectory(_appDirectory);
 
@@ -93,13 +93,13 @@ namespace GameLauncher
                     }
                     else
                     {
-                        UpdateStatus("Güncelleme atlandı, hazır!", showSpinner: false);
+                        UpdateStatus("Güncelleme atlandı, hazır!");
                         await Task.Delay(500);
                     }
                 }
                 else
                 {
-                    UpdateStatus("Hazır!", showSpinner: false);
+                    UpdateStatus("Hazır!");
                     await Task.Delay(500);
                 }
 
@@ -108,7 +108,7 @@ namespace GameLauncher
             }
             catch (Exception ex)
             {
-                UpdateStatus("Hata oluştu!", showSpinner: false);
+                UpdateStatus("Hata oluştu!");
                 MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}",
                     "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                 Application.Current.Shutdown();
@@ -128,7 +128,7 @@ namespace GameLauncher
 
             try
             {
-                UpdateStatus($"İndiriliyor... v{versionInfo.Version}", showSpinner: true);
+                UpdateStatus($"İndiriliyor... v{versionInfo.Version}");
 
                 using (var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
@@ -168,7 +168,7 @@ namespace GameLauncher
                     }
                 }
 
-                UpdateStatus("Dosya doğrulanıyor...", showSpinner: true);
+                UpdateStatus("Dosya doğrulanıyor...");
                 DownloadProgress.Value = 100;
                 PercentageText.Text = "100%";
 
@@ -184,15 +184,15 @@ namespace GameLauncher
                 var backupDir = Path.Combine(_appDirectory, "backup");
                 if (Directory.Exists(_appDirectory))
                 {
-                    UpdateStatus("Yedekleme yapılıyor...", showSpinner: true);
+                    UpdateStatus("Yedekleme yapılıyor...");
                     CreateBackup(backupDir);
                 }
 
                 // Eski dosyalar siliniyor...
-                UpdateStatus("Temizleniyor...", showSpinner: true);
+                UpdateStatus("Temizleniyor...");
                 CleanOldVersion();
 
-                UpdateStatus("Kuruluyor...", showSpinner: true);
+                UpdateStatus("Kuruluyor...");
                 ZipFile.ExtractToDirectory(tempZipPath, _appDirectory, overwriteFiles: true);
 
                 var localVersionInfo = new VersionInfo
@@ -207,7 +207,7 @@ namespace GameLauncher
                 });
                 await File.WriteAllTextAsync(_localVersionFile, localJson);
 
-                UpdateStatus("Güncelleme tamamlandı!", showSpinner: false);
+                UpdateStatus("Güncelleme tamamlandı!");
                 await Task.Delay(1000);
 
             }
@@ -279,7 +279,7 @@ namespace GameLauncher
         {
             try
             {
-                UpdateStatus("İnternet bağlantısı kontrol ediliyor...", showSpinner: true);
+                UpdateStatus("İnternet bağlantısı kontrol ediliyor...");
 
                 var request = new HttpRequestMessage(HttpMethod.Head, VERSION_URL);
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -287,18 +287,19 @@ namespace GameLauncher
             }
             catch (Exception ex)
             {
-                var errorDetails = $"Hata: {ex.Message}\n\n";
-                if (ex.InnerException != null)
-                {
-                    errorDetails += $"Inner Exception: {ex.InnerException.Message}\n\n";
-                    if (ex.InnerException.InnerException != null)
-                    {
-                        errorDetails += $"Inner Inner: {ex.InnerException.InnerException.Message}";
-                    }
-                }
+                // Hata ayrıntısını görmek için developer modda açılabilir.
+                //var errorDetails = $"Hata: {ex.Message}\n\n";
+                //if (ex.InnerException != null)
+                //{
+                //    errorDetails += $"Inner Exception: {ex.InnerException.Message}\n\n";
+                //    if (ex.InnerException.InnerException != null)
+                //    {
+                //        errorDetails += $"Inner Inner: {ex.InnerException.InnerException.Message}";
+                //    }
+                //}
 
-                MessageBox.Show(errorDetails, "Bağlantı Hatası",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                //MessageBox.Show(errorDetails, "Bağlantı Hatası",
+                //    MessageBoxButton.OK, MessageBoxImage.Error);
 
                 return false;
             }
@@ -306,7 +307,7 @@ namespace GameLauncher
 
         private void HandleNoInternetConnection()
         {
-            UpdateStatus("İnternet bağlantısı yok", showSpinner: false);
+            UpdateStatus("İnternet bağlantısı yok", isOffline: true);
 
             var exePath = Path.Combine(_appDirectory, MAIN_EXE);
             bool appExists = File.Exists(exePath);
@@ -350,7 +351,7 @@ namespace GameLauncher
 
         private async Task<UpdateCheckResult> CheckForUpdatesAsync()
         {
-            UpdateStatus("Güncelleme kontrol ediliyor...", showSpinner: true);
+            UpdateStatus("Güncelleme kontrol ediliyor...");
 
             // Sunucudan version.json çek
             var serverJson = await _httpClient.GetStringAsync(VERSION_URL);
@@ -435,7 +436,7 @@ namespace GameLauncher
                 }
                 else
                 {
-                    UpdateStatus($"Yeni sürüm bulundu: v{serverVersion.Version}", showSpinner: true);
+                    UpdateStatus($"Yeni sürüm bulundu: v{serverVersion.Version}");
                 }
             }
 
@@ -476,20 +477,22 @@ namespace GameLauncher
             });
         }
 
-        private void UpdateStatus(string message, bool showSpinner)
+        private void UpdateStatus(string message, bool isOffline = false)
         {
             Dispatcher.Invoke(() =>
             {
                 StatusText.Text = message;
-                SpinnerRing.Opacity = showSpinner ? 1 : 0;
-
-                if (showSpinner)
+                
+                if (isOffline)
                 {
-                    _spinnerAnimation.Begin();
+                    RetryButton.Visibility = Visibility.Visible;
+
+
                 }
                 else
                 {
-                    _spinnerAnimation.Stop();
+                     RetryButton.Visibility = Visibility.Collapsed;
+
                 }
             });
         }
@@ -524,6 +527,17 @@ namespace GameLauncher
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        private void RetryButton_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private void BottomButton_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
     }
     public class VersionInfo
     {
