@@ -20,12 +20,20 @@ namespace GameLauncher
         private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki!
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
+        private const string UPDATER_NAME = "updater";
+        private const string UPDATER_EXE = "updater.exe";
+        private const string LAUNCHER_NAME = "launcher";
+        private const string LAUNCHER_EXE = "launcher.exe";
 
         private readonly string _localAppData;
         private readonly string _appDirectory;
+        private readonly string _gameDirectory;
+        private readonly string _backupDirectory;
         private readonly string _localVersionFile;
         private readonly HttpClient _httpClient;
-        private Storyboard _spinnerAnimation;
+
+        private ServerManifest _currentManifest;
+        private ServerManifest _localManifest;
 
         public MainWindow()
         {
@@ -34,28 +42,13 @@ namespace GameLauncher
             _localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _appDirectory = Path.Combine(_localAppData, APP_NAME);
             _localVersionFile = Path.Combine(_appDirectory, "version.json");
+            _gameDirectory = Path.Combine(_appDirectory, "Game");
+            _backupDirectory = Path.Combine(_appDirectory, "Backups");
 
             _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
 
-            InitializeSpinnerAnimation();
             Loaded += async (s, e) => await InitializeAsync();
 
-        }
-
-        private void InitializeSpinnerAnimation()
-        {
-            //var rotation = new DoubleAnimation
-            //{
-            //    From = 0,
-            //    To = 360,
-            //    Duration = new Duration(TimeSpan.FromSeconds(1)),
-            //    RepeatBehavior = RepeatBehavior.Forever
-            //};
-
-            //_spinnerAnimation = new Storyboard();
-            //_spinnerAnimation.Children.Add(rotation);
-            //Storyboard.SetTarget(rotation, SpinnerRotation);
-            //Storyboard.SetTargetProperty(rotation, new PropertyPath("Angle"));
         }
 
         private async Task InitializeAsync()
@@ -74,37 +67,154 @@ namespace GameLauncher
                     return;
                 }
 
-                UpdateCheckResult updateResult = await CheckForUpdatesAsync();
+                UpdateStatus("Versiyonlar kontrol ediliyor...");
 
-                if (updateResult.IsMandatory)
+                // Verison manifestlarını yükle
+                var json = await _httpClient.GetStringAsync(VERSION_URL);
+                // Verileri c# nesnesine dönüştürür.
+                _currentManifest = JsonSerializer.Deserialize<ServerManifest>(json, new JsonSerializerOptions
                 {
-                    await DownloadAndInstallUpdateAsync();
-                }
-                else if (updateResult.UpdateNeeded)
+                    PropertyNameCaseInsensitive = true
+                });
+
+                await LoadLocalManifestAsync();
+
+                // Updater güncellemesi kontrolü
+                if (IsVersionNewer(_currentManifest.updater.Version, _localManifest.updater.Version))
                 {
-                    var result = MessageBox.Show(
-                        "Yeni bir güncelleme mevcut. Güncelleme yapmak ister misiniz?",
-                        "Güncelleme Mevcut",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-                    if (result == MessageBoxResult.Yes)
+                    UpdateStatus("Sistem bileşenleri güncelleniyor...");
+                    var tempFileName = $"{UPDATER_NAME}_${Guid.NewGuid()}_update.zip";
+                    var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
+
+                    try
                     {
+                        await DownloadFileAsync(_currentManifest.updater.Url, tempZipPath);
+                        ZipFile.ExtractToDirectory(tempZipPath, _appDirectory, overwriteFiles: true);
+
+                        _localManifest.updater.Version = _currentManifest.updater.Version;
+                        _localManifest.updater.Url = _currentManifest.updater.Url;
+                        _localManifest.updater.Sha256 = _currentManifest.updater.Sha256;
+                        _localManifest.updater.Size = _currentManifest.updater.Size;
+                        await SaveLocalManifestAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Updater güncellenemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempZipPath))
+                        {
+                            try { File.Delete(tempZipPath); } catch { /* Silinemezse yapacak bir şey yok, Windows halleder */ }
+                        }
+                    }
+                }
+
+                // Laucnher güncelleme kontrolü
+                if (IsVersionNewer(_currentManifest.launcher.Version, _localManifest.launcher.Version))
+                {
+                    UpdateStatus("Sistem bileşenleri güncelleniyor...");
+                    var tempFileName = $"{LAUNCHER_NAME}_${Guid.NewGuid()}_launcher.zip";
+                    var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
+
+                    try
+                    {
+                        await DownloadFileAsync(_currentManifest.launcher.Url, tempZipPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Güncelleme dosyası indirilemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    string updaterExe = Path.Combine(_appDirectory, UPDATER_EXE);
+                    if (!File.Exists(updaterExe))
+                    {
+                        MessageBox.Show("Kritik Hata: Updater.exe bulunamadı! Lütfen uygulamayı web sitesinden tekrar indirip kurun.", "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = updaterExe,
+                        // ARGÜMANLARIN ANLAMI:
+                        // /mode:launcher       -> "Ben Launcher'ı güncelleyeceğim" modu.
+                        // /source:"..."        -> "Zip dosyası burada, bunu al."
+                        // /target:"..."        -> "Launcher'ın olduğu klasör burası."
+                        // /pid:1234            -> "Bu ID'li program (Launcher) kapanana kadar bekle."
+                        Arguments = $"/mode:launcher /source:\"{tempZipPath}\" /target:\"{_appDirectory}\" /pid:{Process.GetCurrentProcess().Id}",
+                        UseShellExecute = true, // Exe çalıştırmak için true olması daha güvenli
+                        WorkingDirectory = _appDirectory
+                    };
+
+                    try
+                    {
+                        Process.Start(startInfo);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Updater başlatılamadı:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    // 4. UYGULAMAYI KAPAT (Sahne artık Updater'ın)
+                    Application.Current.Shutdown();
+                    return;
+                }
+
+                // Game update kontrolü
+                UpdateStatus("Oyun versiyonu kontrol ediliyor...");
+                bool isGameNew = IsVersionNewer(_currentManifest.game.Version, _localManifest.game.Version);
+                bool isMandotary = _currentManifest.game.Mandatory;
+
+                if (!string.IsNullOrEmpty(_currentManifest.game.MinimumVersion))
+                {
+                    if (IsVersionNewer(_currentManifest.game.MinimumVersion, _localManifest.game.Version))
+                        isMandotary = true;
+                }
+
+                if (isGameNew)
+                {
+                    if (isMandotary)
+                    {
+                        MessageBox.Show(
+                            $"Oyuna kritik bir güncelleme yayınlandı.\n\n" +
+                            $"Mevcut: v{_localManifest.game.Version}\n" +
+                            $"Yeni: v{_localManifest.game.Version}\n\n" +
+                            "Oyuna girmek için güncelleme yapılması zorunludur.",
+                            "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+                        // Kullanıcıya sormadan direkt başlatıyoruz
                         await DownloadAndInstallUpdateAsync();
                     }
                     else
                     {
-                        UpdateStatus("Güncelleme atlandı, hazır!");
-                        await Task.Delay(500);
+                        var result = MessageBox.Show(
+                         $"Yeni bir güncelleme mevcut (v{_currentManifest.game.Version}).\n" +
+                         "Şimdi güncellemek ister misiniz?\n\n" +
+                         "(Hayır derseniz mevcut sürümle oyuna girebilirsiniz.)",
+                         "Güncelleme Mevcut",
+                         MessageBoxButton.YesNo,
+                         MessageBoxImage.Question);
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            await DownloadAndInstallUpdateAsync();
+                        }
+                        else
+                        {
+                            UpdateStatus("Güncelleme kullanıcı tarafından ertelendi.");
+                        }
                     }
+
                 }
-                else
-                {
-                    UpdateStatus("Hazır!");
-                    await Task.Delay(500);
+                else 
+                { 
+                    UpdateStatus("Oyun güncel, iyi eğlenceler!"); 
                 }
 
                 ShowPlayButton();
-
             }
             catch (Exception ex)
             {
@@ -115,25 +225,36 @@ namespace GameLauncher
             }
         }
 
+        /// <summary>
+        /// Downloads the latest update package from the server, verifies its integrity, creates a backup of the current
+        /// application, and installs the update asynchronously.
+        /// </summary>
+        /// <remarks>This method updates the application by downloading a ZIP archive from the server,
+        /// verifying its SHA-256 hash if provided, backing up the current application files, and extracting the new
+        /// files. Progress is reported during the download. The method cleans up temporary files after completion or
+        /// failure.</remarks>
+        /// <returns>A task that represents the asynchronous download and installation operation.</returns>
+        /// <exception cref="Exception">Thrown if the update package fails integrity verification or if an error occurs during the download or
+        /// installation process.</exception>
         private async Task DownloadAndInstallUpdateAsync()
         {
-            var serverJson = await _httpClient.GetStringAsync(VERSION_URL);
-            var versionInfo = JsonSerializer.Deserialize<VersionInfo>(serverJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-
-            var tempZipPath = Path.Combine(Path.GetTempPath(), $"{APP_NAME}_update.zip");
+            var tempFileName = $"{APP_NAME}_${Guid.NewGuid()}_update.zip";
+            var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
 
             try
             {
-                UpdateStatus($"İndiriliyor... v{versionInfo.Version}");
+                UpdateStatus($"İndiriliyor... v{_currentManifest.game.Version}");
+
+                //Dispatcher.Invoke(() => {
+                //    DownloadProgress.Visibility = Visibility.Visible;
+                //    PercentageText.Visibility = Visibility.Visible;
+                //    SpeedText.Visibility = Visibility.Visible;
+                //});
 
                 using (var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     // ResponseHeadersRead fonksiyonu tüm dosyayı RAM'e indireye çalışmaz. Dosyayı indirriken işlemey başlar. Bir akış sağlar.
-                    var downloadResponse = await _httpClient.GetAsync(versionInfo.Url, HttpCompletionOption.ResponseHeadersRead);
+                    var downloadResponse = await _httpClient.GetAsync(_currentManifest.game.Url, HttpCompletionOption.ResponseHeadersRead);
                     downloadResponse.EnsureSuccessStatusCode();
 
                     // Gönderilen dosya boyutu biliniyorsa ilerleme çubuğunu güncelleyebiliriz.
@@ -172,20 +293,19 @@ namespace GameLauncher
                 DownloadProgress.Value = 100;
                 PercentageText.Text = "100%";
 
-                if (!string.IsNullOrEmpty(versionInfo.Sha256))
+                if (!string.IsNullOrEmpty(_currentManifest.game.Sha256))
                 {
-                    if (!VerifyFileHash(tempZipPath, versionInfo.Sha256))
+                    if (!VerifyFileHash(tempZipPath, _currentManifest.game.Sha256))
                     {
                         throw new Exception("Dosya bütünlüğü doğrulanamadı!");
                     }
                 }
 
                 // Güncelleme yapmadan önce yedekleme işlemini başlatıyoruz.
-                var backupDir = Path.Combine(_appDirectory, "backup");
-                if (Directory.Exists(_appDirectory))
+                if (Directory.Exists(_gameDirectory))
                 {
                     UpdateStatus("Yedekleme yapılıyor...");
-                    CreateBackup(backupDir);
+                    CreateBackup(_gameDirectory, _backupDirectory);
                 }
 
                 // Eski dosyalar siliniyor...
@@ -193,19 +313,10 @@ namespace GameLauncher
                 CleanOldVersion();
 
                 UpdateStatus("Kuruluyor...");
-                ZipFile.ExtractToDirectory(tempZipPath, _appDirectory, overwriteFiles: true);
+                ZipFile.ExtractToDirectory(tempZipPath, _gameDirectory, overwriteFiles: true);
 
-                var localVersionInfo = new VersionInfo
-                {
-                    Version = versionInfo.Version,
-                    Url = versionInfo.Url
-                };
-
-                var localJson = JsonSerializer.Serialize(localVersionInfo, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-                await File.WriteAllTextAsync(_localVersionFile, localJson);
+                _localManifest.game = _currentManifest.game;
+                await SaveLocalManifestAsync();
 
                 UpdateStatus("Güncelleme tamamlandı!");
                 await Task.Delay(1000);
@@ -219,7 +330,6 @@ namespace GameLauncher
                     File.Delete(tempZipPath);
                 }
             }
-
         }
 
         private bool VerifyFileHash(string filePath, string expectedHash)
@@ -232,46 +342,95 @@ namespace GameLauncher
 
         private void CleanOldVersion()
         {
-            var protectedFiles = new[] { "config.json", "userdata.db", "version.json" };
-            var protectedDirs = new[] { "backup", "logs", "cache" };
-
-            foreach (var file in Directory.GetFiles(_appDirectory))
+            if (!Directory.Exists(_gameDirectory))
             {
-                var fileName = Path.GetFileName(file);
-                if (!Array.Exists(protectedFiles, pf => pf.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    try { File.Delete(file); } catch { }
-                }
+                Directory.CreateDirectory(_gameDirectory);
+                return;
             }
 
-            foreach (var dir in Directory.GetDirectories(_appDirectory))
+            try
             {
-                var dirName = Path.GetFileName(dir);
-                if (!Array.Exists(protectedDirs, pd => pd.Equals(dirName, StringComparison.OrdinalIgnoreCase)))
+                DirectoryInfo gameDir = new DirectoryInfo(_gameDirectory);
+
+                var protectedExtensions = new[] { ".sav", ".save", ".dat", ".user" };
+                var protectedFiles = new[] { "settings.ini", "config.cfg", "userdata.db", "config.json" };
+                var protectedFolders = new[] { "Screenshots", "Saves", "Logs", "cache" };
+
+                foreach (FileInfo file in gameDir.GetFiles())
                 {
-                    try { Directory.Delete(dir, true); } catch { }
+                    var ext = file.Extension.ToLower(); // .exe, .dll vb.
+                    var name = file.Name;
+
+                    bool isProtected = protectedExtensions.Contains(ext) || protectedFiles.Contains(name);
+
+                    if (!isProtected)
+                    {
+                        if (file.IsReadOnly) file.IsReadOnly = false;
+                        file.Delete();
+                    }
                 }
+
+                foreach (DirectoryInfo dir in gameDir.GetDirectories())
+                {
+                    if (!protectedFolders.Contains(dir.Name))
+                    {
+                        dir.Delete(true);
+                    }
+                }
+
+            }
+            catch (IOException ex)
+            {
+                MessageBox.Show($"Temizlik yapılırken hata oluştu. Lütfen oyunun kapalı olduğundan emin olun.\n\nHata: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Warning);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Temizlik hatası: " + ex.Message);
             }
         }
 
-        private void CreateBackup(string backupDir)
+        private void CreateBackup(string sourceDir, string backupDir)
         {
-            if (Directory.Exists(backupDir))
+            if (!(Directory.Exists(sourceDir))) return;
+
+            try
             {
-                Directory.Delete(backupDir, true);
+                if (Directory.Exists(backupDir))
+                {
+                    Directory.Delete(backupDir, true);
+                }
+                Directory.CreateDirectory(backupDir);
+
+                CopyDirectoryRecursive(sourceDir, backupDir);
+
+                UpdateStatus("Yedekleme Tamamlandı");
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show($"Yedekleme hatası: {e.Message}");
+            }
+        }
+
+        private static void CopyDirectoryRecursive(string sourceDir, string destDir)
+        {
+            var dir = new DirectoryInfo(sourceDir);
+
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
             }
 
-            Directory.CreateDirectory(backupDir);
-
-            foreach (var file in Directory.GetFiles(_appDirectory, "*.*", SearchOption.TopDirectoryOnly))
+            foreach (FileInfo file in dir.GetFiles())
             {
-                var ext = Path.GetExtension(file).ToLower();
-                if (ext == ".exe" || ext == ".dll" || ext == ".config")
-                {
-                    var fileName = Path.GetFileName(file);
-                    // app Directory dosyalarını yedekliyoruz.
-                    File.Copy(file, Path.Combine(backupDir, fileName), true);
-                }
+                string targetFilePath = Path.Combine(destDir, file.Name);
+                file.CopyTo(targetFilePath, true);
+            }
+
+            foreach (DirectoryInfo subDir in dir.GetDirectories())
+            {
+                string newDestDir = Path.Combine(destDir, subDir.Name);
+                CopyDirectoryRecursive(subDir.FullName, newDestDir);
             }
         }
 
@@ -349,107 +508,9 @@ namespace GameLauncher
             }
         }
 
-        private async Task<UpdateCheckResult> CheckForUpdatesAsync()
-        {
-            UpdateStatus("Güncelleme kontrol ediliyor...");
-
-            // Sunucudan version.json çek
-            var serverJson = await _httpClient.GetStringAsync(VERSION_URL);
-            var serverVersion = JsonSerializer.Deserialize<VersionInfo>(serverJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            // Yerel version.json'ı oku
-            VersionInfo localVersion = null;
-            if (File.Exists(_localVersionFile))
-            {
-                var localJson = await File.ReadAllTextAsync(_localVersionFile);
-                localVersion = JsonSerializer.Deserialize<VersionInfo>(localJson, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-
-            // Ana exe var mı kontrol et
-            var mainExePath = Path.Combine(_appDirectory, MAIN_EXE);
-            if (!File.Exists(mainExePath))
-            {
-                // İlk kurulum - güncelleme gerek
-                return new UpdateCheckResult { UpdateNeeded = true, IsMandatory = true };
-            }
-
-            if (localVersion == null)
-            {
-                return new UpdateCheckResult { UpdateNeeded = true, IsMandatory = true };
-            }
-
-            var local = new Version(localVersion.Version);
-            var server = new Version(serverVersion.Version);
-
-            bool belowMinimum = false;
-            if (!string.IsNullOrEmpty(serverVersion.MinimumVersion))
-            {
-                var minimum = new Version(serverVersion.MinimumVersion);
-                belowMinimum = local < minimum;
-            }
-
-            bool updateAvailable = server > local;
-            bool isMandatory = serverVersion.Mandatory || belowMinimum;
-
-            Dispatcher.Invoke(() =>
-            {
-                if (updateAvailable)
-                {
-                    VersionText.Text = $"v{localVersion.Version} → v{serverVersion.Version}";
-                }
-                else
-                {
-                    VersionText.Text = $"v{localVersion.Version}";
-                }
-            });
-
-            if (updateAvailable)
-            {
-                if (isMandatory)
-                {
-                    string message;
-                    if (belowMinimum)
-                    {
-                        message = $"Mevcut sürümünüz (v{localVersion.Version}) artık desteklenmiyor.\n\n" +
-                                $"Minimum desteklenen sürüm: v{serverVersion.MinimumVersion}\n" +
-                                $"Yeni sürüm: v{serverVersion.Version}\n\n" +
-                                "Uygulamayı kullanmak için güncelleme zorunludur.";
-                    }
-                    else
-                    {
-                        message = $"Kritik bir güncelleme yayınlandı (v{serverVersion.Version}).\n\n" +
-                                "Bu güncelleme uygulamayı kullanmak için zorunludur.\n" +
-                                "Güncelleme otomatik olarak başlatılacak.";
-                    }
-
-                    Dispatcher.Invoke(() =>
-                    {
-                        MessageBox.Show(message, "Zorunlu Güncelleme",
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                    });
-                }
-                else
-                {
-                    UpdateStatus($"Yeni sürüm bulundu: v{serverVersion.Version}");
-                }
-            }
-
-            return new UpdateCheckResult
-            {
-                UpdateNeeded = updateAvailable,
-                IsMandatory = isMandatory
-            };
-        }
-
         private void LaunchMainApplication()
         {
-            var exePath = Path.Combine(_appDirectory, MAIN_EXE);
+            var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
 
             if (!File.Exists(exePath))
             {
@@ -464,6 +525,89 @@ namespace GameLauncher
             };
 
             Process.Start(startInfo);
+        }
+
+        // Versiyon Karşılaştırma (1.0.1 > 1.0.0 gibi)
+        private bool IsVersionNewer(string serverVer, string localVer)
+        {
+            if (string.IsNullOrEmpty(serverVer)) return false;
+            if (string.IsNullOrEmpty(localVer)) return true;
+
+            Version server = Version.TryParse(serverVer, out var v1) ? v1 : new Version("1.0.0");
+            Version local = Version.TryParse(localVer, out var v2) ? v2 : new Version("1.0.0");
+
+            return server > local;
+        }
+
+        /// <summary>
+        /// Asynchronously downloads a file from the specified URL and saves it to the given destination path.
+        /// </summary>
+        /// <remarks>Progress updates may be reported during the download if the total file size is known.
+        /// The method overwrites the destination file if it already exists.</remarks>
+        /// <param name="url">The URL of the file to download. Must be a valid, absolute URI.</param>
+        /// <param name="destinationPath">The full file system path where the downloaded file will be saved. If the file exists, it will be
+        /// overwritten.</param>
+        /// <returns>A task that represents the asynchronous download operation.</returns>
+        private async Task DownloadFileAsync(string url, string destinationPath)
+        {
+            using (var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                var canReport = totalBytes != -1;
+
+                using (var contentStream = await response.Content.ReadAsStreamAsync())
+                using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
+                {
+                    var buffer = new byte[8192];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        totalRead += bytesRead;
+
+                        if (canReport)
+                        {
+                            var progress = (double)totalRead / totalBytes * 100;
+                            Dispatcher.Invoke(() =>
+                            {
+                                DownloadProgress.Value = progress;
+                                PercentageText.Text = $"%{progress:F0}";
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        private async Task LoadLocalManifestAsync()
+        {
+            if (File.Exists(_localVersionFile))
+            {
+                try
+                {
+                    string json = await File.ReadAllTextAsync(_localVersionFile);
+                    _localManifest = JsonSerializer.Deserialize<ServerManifest>(json);
+                }
+                catch { _localManifest = new ServerManifest(); }
+            }
+            else
+            {
+                _localManifest = new ServerManifest
+                {
+                    launcher = new ComponentVersion { Version = "0.0.0" },
+                    updater = new ComponentVersion { Version = "0.0.0" },
+                    game = new ComponentVersion { Version = "0.0.0" }
+                };
+            }
+        }
+        private async Task SaveLocalManifestAsync()
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(_localManifest, options);
+            await File.WriteAllTextAsync(_localVersionFile, json);
         }
 
         private void ShowPlayButton()
@@ -482,7 +626,7 @@ namespace GameLauncher
             Dispatcher.Invoke(() =>
             {
                 StatusText.Text = message;
-                
+
                 if (isOffline)
                 {
                     RetryButton.Visibility = Visibility.Visible;
@@ -491,7 +635,7 @@ namespace GameLauncher
                 }
                 else
                 {
-                     RetryButton.Visibility = Visibility.Collapsed;
+                    RetryButton.Visibility = Visibility.Collapsed;
 
                 }
             });
@@ -539,7 +683,16 @@ namespace GameLauncher
         }
 
     }
-    public class VersionInfo
+    public class ServerManifest
+    {
+        public ComponentVersion launcher { get; set; }
+        public ComponentVersion updater { get; set; }
+        public ComponentVersion game { get; set; }
+        public DateTime lastUpdated { get; set; }
+        public bool initalRelease { get; set; }
+    }
+
+    public class ComponentVersion
     {
         public string Version { get; set; }
         public string Url { get; set; }
@@ -547,11 +700,5 @@ namespace GameLauncher
         public long Size { get; set; }
         public bool Mandatory { get; set; }
         public string MinimumVersion { get; set; }
-    }
-
-    public class UpdateCheckResult
-    {
-        public bool UpdateNeeded { get; set; }
-        public bool IsMandatory { get; set; }
     }
 }
