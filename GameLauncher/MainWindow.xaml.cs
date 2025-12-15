@@ -79,6 +79,17 @@ namespace GameLauncher
 
                 await LoadLocalManifestAsync();
 
+                string[] args = Environment.GetCommandLineArgs();
+                bool justUpdated =  Array.Exists(args, arg => arg == "/post-update");
+
+                if (justUpdated)
+                {
+                    UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
+
+                    _localManifest.launcher = _currentManifest.launcher;
+                    await SaveLocalManifestAsync();
+                }
+
                 // Updater güncellemesi kontrolü
                 if (IsVersionNewer(_currentManifest.updater.Version, _localManifest.updater.Version))
                 {
@@ -226,15 +237,16 @@ namespace GameLauncher
         }
 
         /// <summary>
-        /// Downloads the latest update package from the server, verifies its integrity, creates a backup of the current
-        /// application, and installs the update asynchronously.
+        /// Downloads the latest update package, verifies its integrity, creates a backup of the current installation,
+        /// and installs the update asynchronously.
         /// </summary>
-        /// <remarks>This method updates the application by downloading a ZIP archive from the server,
-        /// verifying its SHA-256 hash if provided, backing up the current application files, and extracting the new
-        /// files. Progress is reported during the download. The method cleans up temporary files after completion or
-        /// failure.</remarks>
+        /// <remarks>This method updates the application by downloading the update package from the URL
+        /// specified in the current manifest, verifying its SHA-256 hash if provided, backing up the existing
+        /// installation, and extracting the new files. The method also updates the local manifest to reflect the new
+        /// version. Progress and status updates are reported during the operation. Temporary files created during the
+        /// process are deleted upon completion.</remarks>
         /// <returns>A task that represents the asynchronous download and installation operation.</returns>
-        /// <exception cref="Exception">Thrown if the update package fails integrity verification or if an error occurs during the download or
+        /// <exception cref="Exception">Thrown if the downloaded file fails integrity verification or if an error occurs during the download or
         /// installation process.</exception>
         private async Task DownloadAndInstallUpdateAsync()
         {
