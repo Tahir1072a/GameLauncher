@@ -20,9 +20,9 @@ namespace GameLauncher
         private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki!
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
-        private const string UPDATER_NAME = "updater";
+        private const string UPDATER_NAME = "Updater";
         private const string UPDATER_EXE = "updater.exe";
-        private const string LAUNCHER_NAME = "launcher";
+        private const string LAUNCHER_NAME = "GameLauncher";
         private const string LAUNCHER_EXE = "launcher.exe";
 
         private readonly string _localAppData;
@@ -80,13 +80,16 @@ namespace GameLauncher
                 await LoadLocalManifestAsync();
 
                 string[] args = Environment.GetCommandLineArgs();
-                bool justUpdated =  Array.Exists(args, arg => arg == "/post-update");
-
+                bool justUpdated =  Array.Exists(args, arg => arg == "/post_update");
+ 
                 if (justUpdated)
                 {
                     UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
 
-                    _localManifest.launcher = _currentManifest.launcher;
+                    _localManifest.launcher.Version = _currentManifest.launcher.Version;
+                    _localManifest.launcher.Url = _currentManifest.launcher.Url;
+                    _localManifest.launcher.Sha256 = _currentManifest.launcher.Sha256;
+                    _localManifest.launcher.Size = _currentManifest.launcher.Size;
                     await SaveLocalManifestAsync();
                 }
 
@@ -192,7 +195,7 @@ namespace GameLauncher
                         MessageBox.Show(
                             $"Oyuna kritik bir güncelleme yayınlandı.\n\n" +
                             $"Mevcut: v{_localManifest.game.Version}\n" +
-                            $"Yeni: v{_localManifest.game.Version}\n\n" +
+                            $"Yeni: v{_currentManifest.game.Version}\n\n" +
                             "Oyuna girmek için güncelleme yapılması zorunludur.",
                             "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
 
@@ -603,7 +606,15 @@ namespace GameLauncher
                     string json = await File.ReadAllTextAsync(_localVersionFile);
                     _localManifest = JsonSerializer.Deserialize<ServerManifest>(json);
                 }
-                catch { _localManifest = new ServerManifest(); }
+                catch 
+                { 
+                    _localManifest =  _localManifest = new ServerManifest
+                {
+                    launcher = new ComponentVersion { Version = "0.0.0" },
+                    updater = new ComponentVersion { Version = "0.0.0" },
+                    game = new ComponentVersion { Version = "0.0.0" }
+                };
+                }
             }
             else
             {
