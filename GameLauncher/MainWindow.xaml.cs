@@ -23,7 +23,7 @@ namespace GameLauncher
         private const string UPDATER_NAME = "Updater";
         private const string UPDATER_EXE = "updater.exe";
         private const string LAUNCHER_NAME = "GameLauncher";
-        private const string LAUNCHER_EXE = "launcher.exe";
+        private const string LAUNCHER_EXE = "GameLauncher.exe";
 
         private readonly string _localAppData;
         private readonly string _appDirectory;
@@ -55,6 +55,7 @@ namespace GameLauncher
         {
             try
             {
+                await LoadLocalManifestAsync();
                 UpdateStatus("Başlatılıyor...");
 
                 Directory.CreateDirectory(_appDirectory);
@@ -76,8 +77,6 @@ namespace GameLauncher
                 {
                     PropertyNameCaseInsensitive = true
                 });
-
-                await LoadLocalManifestAsync();
 
                 string[] args = Environment.GetCommandLineArgs();
                 bool justUpdated =  Array.Exists(args, arg => arg == "/post_update");
@@ -574,7 +573,7 @@ namespace GameLauncher
                 using (var contentStream = await response.Content.ReadAsStreamAsync())
                 using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
                 {
-                    var buffer = new byte[8192];
+                    var buffer = new byte[8192 * 4];
                     long totalRead = 0;
                     int bytesRead;
 
@@ -625,6 +624,11 @@ namespace GameLauncher
                     game = new ComponentVersion { Version = "0.0.0" }
                 };
             }
+
+            Dispatcher.Invoke(() =>
+            {
+                VersionText.Text = $"v{_localManifest.game.Version}";
+            });
         }
         private async Task SaveLocalManifestAsync()
         {
