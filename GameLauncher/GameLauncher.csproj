@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>AppIcon_Shadow.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="AppIcon_Shadow.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\App_icon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Resource Include="Assets\background.png" />
     <Resource Include="Assets\bottom.png" />
     <Resource Include="Assets\close.png" />

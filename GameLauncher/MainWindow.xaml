@@ -11,7 +11,7 @@
         Background="Transparent"
         FontFamily="pack://application:,,,/GameLauncher;component/Assets/Fonts/#Inter"
         Icon="pack://application:,,,/GameLauncher;component/Assets/logo.png">
-        
+
 
     <Window.Resources>
         <!-- Main Content Style -->
@@ -128,19 +128,39 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
+            <Setter Property="CacheMode" Value="BitmapCache"/>
+            <Setter Property="Template" >
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Grid Background="{TemplateBinding Background}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.6"/>
-                            </Trigger>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="border" 
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                            To="#E74C3C" Duration="0:0:0.1"/>
+                                        <ColorAnimation Storyboard.TargetProperty="(Button.Foreground).(SolidColorBrush.Color)"
+                                            To="White" Duration="0:0:0.1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="border" 
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                            To="Transparent" Duration="0:0:0.1"/>
+                                        <ColorAnimation Storyboard.TargetProperty="(Button.Foreground).(SolidColorBrush.Color)"
+                                            To="#AAAAAA" Duration="0:0:0.1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+
+                       
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -151,14 +171,14 @@
 
     <Viewbox Stretch="Uniform">
 
-        <Border CornerRadius="15" BorderBrush="#3A3A3A" BorderThickness="2" Width="1080" Height="640">
+        <Border Cursor="Arrow" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" CornerRadius="15" BorderBrush="#3A3A3A" BorderThickness="2" Width="1080" Height="640">
             <!-- Background -->
             <Border.Background>
                 <ImageBrush ImageSource="pack://application:,,,/GameLauncher;component/Assets/background.png" Stretch="UniformToFill" />
             </Border.Background>
 
             <Border.Effect>
-                <DropShadowEffect Color="Black" Direction="0" ShadowDepth="0" BlurRadius="20" Opacity="0.8"/>
+                <DropShadowEffect Color="Black" Direction="0" ShadowDepth="0" BlurRadius="20" Opacity="0.8" RenderingBias="Performance"/>
             </Border.Effect>
 
             <Grid Cursor="Hand">
@@ -168,7 +188,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Title Bar -->
-                <Grid Grid.Row="0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid Grid.Row="0">
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Right" Orientation="Horizontal">
                         <Button  
                            Style="{StaticResource CloseButton}"

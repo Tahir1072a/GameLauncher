@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media.Animation;
 
 namespace GameLauncher
@@ -21,7 +22,7 @@ namespace GameLauncher
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
         private const string UPDATER_NAME = "Updater";
-        private const string UPDATER_EXE = "updater.exe";
+        private const string UPDATER_EXE = "Updater.exe";
         private const string LAUNCHER_NAME = "GameLauncher";
         private const string LAUNCHER_EXE = "GameLauncher.exe";
 
@@ -30,6 +31,7 @@ namespace GameLauncher
         private readonly string _gameDirectory;
         private readonly string _backupDirectory;
         private readonly string _localVersionFile;
+        private readonly string _updaterDirectory;
         private readonly HttpClient _httpClient;
 
         private ServerManifest _currentManifest;
@@ -41,6 +43,7 @@ namespace GameLauncher
             // Local App Klasör Yolunu getirir.
             _localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _appDirectory = Path.Combine(_localAppData, APP_NAME);
+            _updaterDirectory = Path.Combine(_appDirectory, "System");
             _localVersionFile = Path.Combine(_appDirectory, "version.json");
             _gameDirectory = Path.Combine(_appDirectory, "Game");
             _backupDirectory = Path.Combine(_appDirectory, "Backups");
@@ -79,8 +82,8 @@ namespace GameLauncher
                 });
 
                 string[] args = Environment.GetCommandLineArgs();
-                bool justUpdated =  Array.Exists(args, arg => arg == "/post_update");
- 
+                bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
+
                 if (justUpdated)
                 {
                     UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
@@ -102,7 +105,16 @@ namespace GameLauncher
                     try
                     {
                         await DownloadFileAsync(_currentManifest.updater.Url, tempZipPath);
-                        ZipFile.ExtractToDirectory(tempZipPath, _appDirectory, overwriteFiles: true);
+
+                        if (Directory.Exists(_updaterDirectory))
+                        {
+                            Directory.Delete(_updaterDirectory, true);
+                        }
+
+                        Directory.CreateDirectory(_updaterDirectory);
+                        ZipFile.ExtractToDirectory(tempZipPath, _updaterDirectory);
+
+                        CleanupOldUpdaterFiles();
 
                         _localManifest.updater.Version = _currentManifest.updater.Version;
                         _localManifest.updater.Url = _currentManifest.updater.Url;
@@ -141,7 +153,7 @@ namespace GameLauncher
                         return;
                     }
 
-                    string updaterExe = Path.Combine(_appDirectory, UPDATER_EXE);
+                    string updaterExe = Path.Combine(_updaterDirectory, UPDATER_EXE);
                     if (!File.Exists(updaterExe))
                     {
                         MessageBox.Show("Kritik Hata: Updater.exe bulunamadı! Lütfen uygulamayı web sitesinden tekrar indirip kurun.", "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -158,7 +170,7 @@ namespace GameLauncher
                         // /pid:1234            -> "Bu ID'li program (Launcher) kapanana kadar bekle."
                         Arguments = $"/mode:launcher /source:\"{tempZipPath}\" /target:\"{_appDirectory}\" /pid:{Process.GetCurrentProcess().Id}",
                         UseShellExecute = true, // Exe çalıştırmak için true olması daha güvenli
-                        WorkingDirectory = _appDirectory
+                        WorkingDirectory = Path.GetDirectoryName(updaterExe)
                     };
 
                     try
@@ -222,9 +234,9 @@ namespace GameLauncher
                     }
 
                 }
-                else 
-                { 
-                    UpdateStatus("Oyun güncel, iyi eğlenceler!"); 
+                else
+                {
+                    UpdateStatus("Oyun güncel, iyi eğlenceler!");
                 }
 
                 ShowPlayButton();
@@ -235,6 +247,32 @@ namespace GameLauncher
                 MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}",
                     "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                 Application.Current.Shutdown();
+            }
+        }
+
+        private void CleanupOldUpdaterFiles()
+        {
+            try
+            {
+                string[] oldFiles = {
+                    UPDATER_EXE,
+                    "Updater.pdb",
+                    "Updater.deps.json",
+                    "Updater.runtimeconfig.json"
+                };
+
+                foreach (var fileName in oldFiles)
+                {
+                    string filePath = Path.Combine(_appDirectory, fileName);
+                    if (File.Exists(filePath))
+                    {
+                        File.Delete(filePath);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Debug.WriteLine("Eski dosyalar silinemedi: " + ex.Message);
             }
         }
 
@@ -259,15 +297,9 @@ namespace GameLauncher
             {
                 UpdateStatus($"İndiriliyor... v{_currentManifest.game.Version}");
 
-                //Dispatcher.Invoke(() => {
-                //    DownloadProgress.Visibility = Visibility.Visible;
-                //    PercentageText.Visibility = Visibility.Visible;
-                //    SpeedText.Visibility = Visibility.Visible;
-                //});
-
                 using (var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    // ResponseHeadersRead fonksiyonu tüm dosyayı RAM'e indireye çalışmaz. Dosyayı indirriken işlemey başlar. Bir akış sağlar.
+                    // ResponseHeadersRead fonksiyonu tüm dosyayı RAM'e indireye çalışmaz. Dosyayı indirirken işlemeye başlar. Bir akış sağlar.
                     var downloadResponse = await _httpClient.GetAsync(_currentManifest.game.Url, HttpCompletionOption.ResponseHeadersRead);
                     downloadResponse.EnsureSuccessStatusCode();
 
@@ -282,20 +314,23 @@ namespace GameLauncher
                         int bytesRead;
                         var stopwatch = Stopwatch.StartNew();
 
+                        DateTime lastUpdate = DateTime.MinValue;
+
                         while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                         {
                             await fileStream.WriteAsync(buffer, 0, bytesRead);
                             totalRead += bytesRead;
 
-                            if (canReportProgress)
+                            if (canReportProgress && (DateTime.Now - lastUpdate).TotalMicroseconds > 300)
                             {
+                                lastUpdate = DateTime.Now;
                                 var progress = (double)totalRead / totalBytes * 100;
                                 var speed = totalRead / stopwatch.Elapsed.TotalSeconds / 1024 / 1024; // MB/s
 
                                 Dispatcher.Invoke(() =>
                                 {
                                     DownloadProgress.Value = progress;
-                                    PercentageText.Text = $"{progress:F1}%";
+                                    PercentageText.Text = $"{progress:F0}%";
                                     SpeedText.Text = $"{speed:F2} MB/s";
                                 });
                             }
@@ -482,7 +517,7 @@ namespace GameLauncher
         {
             UpdateStatus("İnternet bağlantısı yok", isOffline: true);
 
-            var exePath = Path.Combine(_appDirectory, MAIN_EXE);
+            var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
             bool appExists = File.Exists(exePath);
 
             if (appExists)
@@ -577,10 +612,13 @@ namespace GameLauncher
                     long totalRead = 0;
                     int bytesRead;
 
+                    var stopwatch = Stopwatch.StartNew();
+
                     while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                     {
                         await fileStream.WriteAsync(buffer, 0, bytesRead);
                         totalRead += bytesRead;
+                        var speed = totalRead / stopwatch.Elapsed.TotalSeconds / 1024 / 1024; // MB/s
 
                         if (canReport)
                         {
@@ -589,6 +627,7 @@ namespace GameLauncher
                             {
                                 DownloadProgress.Value = progress;
                                 PercentageText.Text = $"%{progress:F0}";
+                                SpeedText.Text = $"{speed:F2} MB/s";
                             });
                         }
                     }
@@ -605,14 +644,14 @@ namespace GameLauncher
                     string json = await File.ReadAllTextAsync(_localVersionFile);
                     _localManifest = JsonSerializer.Deserialize<ServerManifest>(json);
                 }
-                catch 
-                { 
-                    _localManifest =  _localManifest = new ServerManifest
+                catch
                 {
-                    launcher = new ComponentVersion { Version = "0.0.0" },
-                    updater = new ComponentVersion { Version = "0.0.0" },
-                    game = new ComponentVersion { Version = "0.0.0" }
-                };
+                    _localManifest = _localManifest = new ServerManifest
+                    {
+                        launcher = new ComponentVersion { Version = "0.0.0" },
+                        updater = new ComponentVersion { Version = "0.0.0" },
+                        game = new ComponentVersion { Version = "0.0.0" }
+                    };
                 }
             }
             else
@@ -670,11 +709,7 @@ namespace GameLauncher
 
         private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (e.ClickCount == 2)
-            {
-                // Double click - do nothing (no maximize)
-            }
-            else
+            if (e.ChangedButton == MouseButton.Left)
             {
                 DragMove();
             }
