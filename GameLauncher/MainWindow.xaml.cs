@@ -131,7 +131,7 @@ namespace GameLauncher
                     {
                         if (File.Exists(tempZipPath))
                         {
-                            try { File.Delete(tempZipPath); } catch { /* Silinemezse yapacak bir şey yok, Windows halleder */ }
+                            try { File.Delete(tempZipPath); } catch { /* Silinemezse, Windows halleder */ }
                         }
                     }
                 }
@@ -169,7 +169,7 @@ namespace GameLauncher
                         // /target:"..."        -> "Launcher'ın olduğu klasör burası."
                         // /pid:1234            -> "Bu ID'li program (Launcher) kapanana kadar bekle."
                         Arguments = $"/mode:launcher /source:\"{tempZipPath}\" /target:\"{_appDirectory}\" /pid:{Process.GetCurrentProcess().Id}",
-                        UseShellExecute = true, // Exe çalıştırmak için true olması daha güvenli
+                        UseShellExecute = true,
                         WorkingDirectory = Path.GetDirectoryName(updaterExe)
                     };
 
@@ -189,7 +189,7 @@ namespace GameLauncher
                 }
 
                 // Game update kontrolü
-                UpdateStatus("Oyun versiyonu kontrol ediliyor...");
+                UpdateStatus("Uygulama versiyonu kontrol ediliyor...");
                 bool isGameNew = IsVersionNewer(_currentManifest.game.Version, _localManifest.game.Version);
                 bool isMandotary = _currentManifest.game.Mandatory;
 
@@ -204,10 +204,10 @@ namespace GameLauncher
                     if (isMandotary)
                     {
                         MessageBox.Show(
-                            $"Oyuna kritik bir güncelleme yayınlandı.\n\n" +
+                            $"Uygulamaya kritik bir güncelleme yayınlandı.\n\n" +
                             $"Mevcut: v{_localManifest.game.Version}\n" +
                             $"Yeni: v{_currentManifest.game.Version}\n\n" +
-                            "Oyuna girmek için güncelleme yapılması zorunludur.",
+                            "Uygulamaya girmek için güncelleme yapılması zorunludur.",
                             "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
 
                         // Kullanıcıya sormadan direkt başlatıyoruz
@@ -218,7 +218,7 @@ namespace GameLauncher
                         var result = MessageBox.Show(
                          $"Yeni bir güncelleme mevcut (v{_currentManifest.game.Version}).\n" +
                          "Şimdi güncellemek ister misiniz?\n\n" +
-                         "(Hayır derseniz mevcut sürümle oyuna girebilirsiniz.)",
+                         "(Hayır derseniz mevcut sürümle uygulamaya girebilirsiniz.)",
                          "Güncelleme Mevcut",
                          MessageBoxButton.YesNo,
                          MessageBoxImage.Question);
@@ -236,7 +236,7 @@ namespace GameLauncher
                 }
                 else
                 {
-                    UpdateStatus("Oyun güncel, iyi eğlenceler!");
+                    UpdateStatus("Uygulama güncel!");
                 }
 
                 ShowPlayButton();
@@ -430,7 +430,7 @@ namespace GameLauncher
             }
             catch (IOException ex)
             {
-                MessageBox.Show($"Temizlik yapılırken hata oluştu. Lütfen oyunun kapalı olduğundan emin olun.\n\nHata: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Temizlik yapılırken hata oluştu. Lütfen uygulamanın kapalı olduğundan emin olun.\n\nHata: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Warning);
                 throw;
             }
             catch (Exception ex)
