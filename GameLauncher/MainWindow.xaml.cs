@@ -190,8 +190,8 @@ namespace GameLauncher
 
                 // Game update kontrolü
                 UpdateStatus("Uygulama versiyonu kontrol ediliyor...");
-                bool isGameNew = IsVersionNewer(_currentManifest.game.Version, _localManifest.game.Version);
-                bool isMandotary = _currentManifest.game.Mandatory;
+                bool isGameNew = IsVersionNewer(_currentManifest.game.Version, _localManifest.game.Version) || !IsGameExists();
+                bool isMandotary = _currentManifest.game.Mandatory || !IsGameExists(); 
 
                 if (!string.IsNullOrEmpty(_currentManifest.game.MinimumVersion))
                 {
@@ -203,13 +203,6 @@ namespace GameLauncher
                 {
                     if (isMandotary)
                     {
-                        MessageBox.Show(
-                            $"Uygulamaya kritik bir güncelleme yayınlandı.\n\n" +
-                            $"Mevcut: v{_localManifest.game.Version}\n" +
-                            $"Yeni: v{_currentManifest.game.Version}\n\n" +
-                            "Uygulamaya girmek için güncelleme yapılması zorunludur.",
-                            "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
-
                         // Kullanıcıya sormadan direkt başlatıyoruz
                         await DownloadAndInstallUpdateAsync();
                     }
@@ -229,10 +222,9 @@ namespace GameLauncher
                         }
                         else
                         {
-                            UpdateStatus("Güncelleme kullanıcı tarafından ertelendi.");
+                            UpdateStatus("Güncelleme ertelendi.");
                         }
                     }
-
                 }
                 else
                 {
@@ -522,19 +514,9 @@ namespace GameLauncher
 
             if (appExists)
             {
-                MessageBox.Show(
-                    "İnternet bağlantısı bulunamadı.\n\n" +
-                    "Güncellemeler kontrol edilemedi ancak uygulamanın yüklü bir sürümü bulundu.\n" +
-                    "Uygulama Çevrimdışı (Offline) modda başlatılıyor.",
-                    "Çevrimdışı Mod", // Başlık düzeltildi
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning
-                );
-
                 try
                 {
                     LaunchMainApplication();
-                    Application.Current.Shutdown();
                 }
                 catch (Exception ex)
                 {
@@ -569,16 +551,23 @@ namespace GameLauncher
             var startInfo = new ProcessStartInfo
             {
                 FileName = exePath,
-                WorkingDirectory = _appDirectory,
-                UseShellExecute = false
+                WorkingDirectory = _gameDirectory,
+                UseShellExecute = true,
+                CreateNoWindow = false
             };
 
             Process.Start(startInfo);
+
+            Task.Delay(500).ContinueWith(_ =>
+            {
+                Dispatcher.Invoke(() => Application.Current.Shutdown());
+            });
         }
 
         // Versiyon Karşılaştırma (1.0.1 > 1.0.0 gibi)
         private bool IsVersionNewer(string serverVer, string localVer)
         {
+
             if (string.IsNullOrEmpty(serverVer)) return false;
             if (string.IsNullOrEmpty(localVer)) return true;
 
@@ -586,6 +575,18 @@ namespace GameLauncher
             Version local = Version.TryParse(localVer, out var v2) ? v2 : new Version("1.0.0");
 
             return server > local;
+        }
+
+        private bool IsGameExists()
+        {
+            var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
+
+            if (!File.Exists(exePath))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -725,7 +726,6 @@ namespace GameLauncher
             try
             {
                 LaunchMainApplication();
-                Application.Current.Shutdown();
             }
             catch (Exception ex)
             {
