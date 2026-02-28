@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using GameLauncher.Entites;
 
 namespace GameLauncher
 {
@@ -34,8 +35,10 @@ namespace GameLauncher
         private readonly string _updaterDirectory;
         private readonly HttpClient _httpClient;
 
-        private ServerManifest _currentManifest;
         private ServerManifest _localManifest;
+        private AppVersionDto _launcherVersion;
+        private AppVersionDto _updaterVersion;
+        private AppVersionDto _gameVersion;
 
         public MainWindow()
         {
@@ -74,12 +77,9 @@ namespace GameLauncher
                 UpdateStatus("Versiyonlar kontrol ediliyor...");
 
                 // Verison manifestlarını yükle
-                var json = await _httpClient.GetStringAsync(VERSION_URL);
-                // Verileri c# nesnesine dönüştürür.
-                _currentManifest = JsonSerializer.Deserialize<ServerManifest>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                _launcherVersion = await ApiClient.GetLatestVersion("Launcher", "Windows");
+                _updaterVersion = await ApiClient.GetLatestVersion("Updater", "Windows");
+                _gameVersion = await ApiClient.GetLatestVersion("AvioTest", "Windows");
 
                 string[] args = Environment.GetCommandLineArgs();
                 bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
@@ -88,15 +88,15 @@ namespace GameLauncher
                 {
                     UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
 
-                    _localManifest.launcher.Version = _currentManifest.launcher.Version;
-                    _localManifest.launcher.Url = _currentManifest.launcher.Url;
-                    _localManifest.launcher.Sha256 = _currentManifest.launcher.Sha256;
-                    _localManifest.launcher.Size = _currentManifest.launcher.Size;
+                    _localManifest.launcher.Version = _launcherVersion.Version;
+                    _localManifest.launcher.Url = _launcherVersion.DownloadUrl;
+                    _localManifest.launcher.Sha256 = _launcherVersion.ChecksumSha256;
+                    _localManifest.launcher.Size = _launcherVersion.Size;
                     await SaveLocalManifestAsync();
                 }
 
                 // Updater güncellemesi kontrolü
-                if (IsVersionNewer(_currentManifest.updater.Version, _localManifest.updater.Version))
+                if (_updaterVersion.Version > _localManifest.updater.Version)
                 {
                     UpdateStatus("Sistem bileşenleri güncelleniyor...");
                     var tempFileName = $"{UPDATER_NAME}_${Guid.NewGuid()}_update.zip";
@@ -104,7 +104,7 @@ namespace GameLauncher
 
                     try
                     {
-                        await DownloadFileAsync(_currentManifest.updater.Url, tempZipPath);
+                        await DownloadFileAsync(_updaterVersion.DownloadUrl, tempZipPath);
 
                         if (Directory.Exists(_updaterDirectory))
                         {
@@ -116,10 +116,10 @@ namespace GameLauncher
 
                         CleanupOldUpdaterFiles();
 
-                        _localManifest.updater.Version = _currentManifest.updater.Version;
-                        _localManifest.updater.Url = _currentManifest.updater.Url;
-                        _localManifest.updater.Sha256 = _currentManifest.updater.Sha256;
-                        _localManifest.updater.Size = _currentManifest.updater.Size;
+                        _localManifest.updater.Version = _updaterVersion.Version;
+                        _localManifest.updater.Url = _updaterVersion.DownloadUrl;
+                        _localManifest.updater.Sha256 = _updaterVersion.ChecksumSha256;
+                        _localManifest.updater.Size = _updaterVersion.Size;
                         await SaveLocalManifestAsync();
                     }
                     catch (Exception ex)
@@ -137,7 +137,7 @@ namespace GameLauncher
                 }
 
                 // Laucnher güncelleme kontrolü
-                if (IsVersionNewer(_currentManifest.launcher.Version, _localManifest.launcher.Version))
+                if (_launcherVersion.Version > _localManifest.launcher.Version)
                 {
                     UpdateStatus("Sistem bileşenleri güncelleniyor...");
                     var tempFileName = $"{LAUNCHER_NAME}_${Guid.NewGuid()}_launcher.zip";
@@ -145,7 +145,7 @@ namespace GameLauncher
 
                     try
                     {
-                        await DownloadFileAsync(_currentManifest.launcher.Url, tempZipPath);
+                        await DownloadFileAsync(_launcherVersion.DownloadUrl, tempZipPath);
                     }
                     catch (Exception ex)
                     {
@@ -190,12 +190,12 @@ namespace GameLauncher
 
                 // Game update kontrolü
                 UpdateStatus("Uygulama versiyonu kontrol ediliyor...");
-                bool isGameNew = IsVersionNewer(_currentManifest.game.Version, _localManifest.game.Version) || !IsGameExists();
-                bool isMandotary = _currentManifest.game.Mandatory || !IsGameExists(); 
+                bool isGameNew = _gameVersion.Version > _localManifest.game.Version;
+                bool isMandotary = _gameVersion.IsMandatory;
 
-                if (!string.IsNullOrEmpty(_currentManifest.game.MinimumVersion))
+                if (_gameVersion.MinVersion != null)
                 {
-                    if (IsVersionNewer(_currentManifest.game.MinimumVersion, _localManifest.game.Version))
+                    if (_gameVersion.MinVersion > _localManifest.game.Version)
                         isMandotary = true;
                 }
 
@@ -203,13 +203,20 @@ namespace GameLauncher
                 {
                     if (isMandotary)
                     {
+                        MessageBox.Show(
+                            $"Uygulamaya kritik bir güncelleme yayınlandı.\n\n" +
+                            $"Mevcut: v{_localManifest.game.Version}\n" +
+                            $"Yeni: v{_gameVersion.Version}\n\n" +
+                            "Uygulamaya girmek için güncelleme yapılması zorunludur.",
+                            "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
+
                         // Kullanıcıya sormadan direkt başlatıyoruz
                         await DownloadAndInstallUpdateAsync();
                     }
                     else
                     {
                         var result = MessageBox.Show(
-                         $"Yeni bir güncelleme mevcut (v{_currentManifest.game.Version}).\n" +
+                         $"Yeni bir güncelleme mevcut (v{_gameVersion.Version}).\n" +
                          "Şimdi güncellemek ister misiniz?\n\n" +
                          "(Hayır derseniz mevcut sürümle uygulamaya girebilirsiniz.)",
                          "Güncelleme Mevcut",
@@ -287,12 +294,12 @@ namespace GameLauncher
 
             try
             {
-                UpdateStatus($"İndiriliyor... v{_currentManifest.game.Version}");
+                UpdateStatus($"İndiriliyor... v{_gameVersion.Version}");
 
                 using (var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
                     // ResponseHeadersRead fonksiyonu tüm dosyayı RAM'e indireye çalışmaz. Dosyayı indirirken işlemeye başlar. Bir akış sağlar.
-                    var downloadResponse = await _httpClient.GetAsync(_currentManifest.game.Url, HttpCompletionOption.ResponseHeadersRead);
+                    var downloadResponse = await _httpClient.GetAsync(_gameVersion.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
                     downloadResponse.EnsureSuccessStatusCode();
 
                     // Gönderilen dosya boyutu biliniyorsa ilerleme çubuğunu güncelleyebiliriz.
@@ -334,9 +341,9 @@ namespace GameLauncher
                 DownloadProgress.Value = 100;
                 PercentageText.Text = "100%";
 
-                if (!string.IsNullOrEmpty(_currentManifest.game.Sha256))
+                if (!string.IsNullOrEmpty(_gameVersion.ChecksumSha256))
                 {
-                    if (!VerifyFileHash(tempZipPath, _currentManifest.game.Sha256))
+                    if (!VerifyFileHash(tempZipPath, _gameVersion.ChecksumSha256))
                     {
                         throw new Exception("Dosya bütünlüğü doğrulanamadı!");
                     }
@@ -356,7 +363,7 @@ namespace GameLauncher
                 UpdateStatus("Kuruluyor...");
                 ZipFile.ExtractToDirectory(tempZipPath, _gameDirectory, overwriteFiles: true);
 
-                _localManifest.game = _currentManifest.game;
+                _localManifest.game = _gameVersion;
                 await SaveLocalManifestAsync();
 
                 UpdateStatus("Güncelleme tamamlandı!");
@@ -564,30 +571,6 @@ namespace GameLauncher
             });
         }
 
-        // Versiyon Karşılaştırma (1.0.1 > 1.0.0 gibi)
-        private bool IsVersionNewer(string serverVer, string localVer)
-        {
-
-            if (string.IsNullOrEmpty(serverVer)) return false;
-            if (string.IsNullOrEmpty(localVer)) return true;
-
-            Version server = Version.TryParse(serverVer, out var v1) ? v1 : new Version("1.0.0");
-            Version local = Version.TryParse(localVer, out var v2) ? v2 : new Version("1.0.0");
-
-            return server > local;
-        }
-
-        private bool IsGameExists()
-        {
-            var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
-
-            if (!File.Exists(exePath))
-            {
-                return false;
-            }
-
-            return true;
-        }
 
         /// <summary>
         /// Asynchronously downloads a file from the specified URL and saves it to the given destination path.
@@ -649,9 +632,9 @@ namespace GameLauncher
                 {
                     _localManifest = _localManifest = new ServerManifest
                     {
-                        launcher = new ComponentVersion { Version = "0.0.0" },
-                        updater = new ComponentVersion { Version = "0.0.0" },
-                        game = new ComponentVersion { Version = "0.0.0" }
+                        launcher = new AppVersionDto { Version = new Version("0.0.0") },
+                        updater = new AppVersionDto { Version = new Version("0.0.0") },
+                        game = new AppVersionDto { Version = new Version("0.0.0") }
                     };
                 }
             }
@@ -659,9 +642,9 @@ namespace GameLauncher
             {
                 _localManifest = new ServerManifest
                 {
-                    launcher = new ComponentVersion { Version = "0.0.0" },
-                    updater = new ComponentVersion { Version = "0.0.0" },
-                    game = new ComponentVersion { Version = "0.0.0" }
+                    launcher = new AppVersionDto { Version = new Version("0.0.0") },
+                    updater = new AppVersionDto { Version = new Version("0.0.0") },
+                    game = new AppVersionDto { Version = new Version("0.0.0") }
                 };
             }
 
@@ -697,7 +680,6 @@ namespace GameLauncher
                 if (isOffline)
                 {
                     RetryButton.Visibility = Visibility.Visible;
-
 
                 }
                 else
@@ -747,20 +729,10 @@ namespace GameLauncher
     }
     public class ServerManifest
     {
-        public ComponentVersion launcher { get; set; }
-        public ComponentVersion updater { get; set; }
-        public ComponentVersion game { get; set; }
+        public AppVersionDto launcher { get; set; }
+        public AppVersionDto updater { get; set; }
+        public AppVersionDto game { get; set; }
         public DateTime lastUpdated { get; set; }
         public bool initalRelease { get; set; }
-    }
-
-    public class ComponentVersion
-    {
-        public string Version { get; set; }
-        public string Url { get; set; }
-        public string Sha256 { get; set; }
-        public long Size { get; set; }
-        public bool Mandatory { get; set; }
-        public string MinimumVersion { get; set; }
     }
 }
