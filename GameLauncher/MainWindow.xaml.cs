@@ -203,14 +203,6 @@ namespace GameLauncher
                 {
                     if (isMandotary)
                     {
-                        MessageBox.Show(
-                            $"Uygulamaya kritik bir güncelleme yayınlandı.\n\n" +
-                            $"Mevcut: v{_localManifest.game.Version}\n" +
-                            $"Yeni: v{_gameVersion.Version}\n\n" +
-                            "Uygulamaya girmek için güncelleme yapılması zorunludur.",
-                            "Zorunlu Güncelleme", MessageBoxButton.OK, MessageBoxImage.Warning);
-
-                        // Kullanıcıya sormadan direkt başlatıyoruz
                         await DownloadAndInstallUpdateAsync();
                     }
                     else
