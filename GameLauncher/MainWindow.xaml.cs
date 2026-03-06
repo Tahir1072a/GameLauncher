@@ -33,7 +33,9 @@ namespace GameLauncher
         private readonly string _backupDirectory;
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
+
         private readonly HttpClient _httpClient;
+        private readonly ApiClient _apiClient;
 
         private ServerManifest _localManifest;
         private AppVersionDto _launcherVersion;
@@ -52,6 +54,7 @@ namespace GameLauncher
             _backupDirectory = Path.Combine(_appDirectory, "Backups");
 
             _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            _apiClient = new ApiClient();
 
             Loaded += async (s, e) => await InitializeAsync();
 
@@ -77,9 +80,9 @@ namespace GameLauncher
                 UpdateStatus("Versiyonlar kontrol ediliyor...");
 
                 // Verison manifestlarını yükle
-                _launcherVersion = await ApiClient.GetLatestVersion("Launcher", "Windows");
-                _updaterVersion = await ApiClient.GetLatestVersion("Updater", "Windows");
-                _gameVersion = await ApiClient.GetLatestVersion("AvioTest", "Windows");
+                _launcherVersion = await _apiClient.GetLatestVersion("Launcher", "Windows");
+                _updaterVersion = await _apiClient.GetLatestVersion("Updater", "Windows");
+                _gameVersion = await _apiClient.GetLatestVersion("AvioTest", "Windows");
 
                 string[] args = Environment.GetCommandLineArgs();
                 bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
@@ -89,8 +92,8 @@ namespace GameLauncher
                     UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
 
                     _localManifest.launcher.Version = _launcherVersion.Version;
-                    _localManifest.launcher.Url = _launcherVersion.DownloadUrl;
-                    _localManifest.launcher.Sha256 = _launcherVersion.ChecksumSha256;
+                    _localManifest.launcher.DownloadUrl = _launcherVersion.DownloadUrl;
+                    _localManifest.launcher.ChecksumSha256 = _launcherVersion.ChecksumSha256;
                     _localManifest.launcher.Size = _launcherVersion.Size;
                     await SaveLocalManifestAsync();
                 }
@@ -117,8 +120,8 @@ namespace GameLauncher
                         CleanupOldUpdaterFiles();
 
                         _localManifest.updater.Version = _updaterVersion.Version;
-                        _localManifest.updater.Url = _updaterVersion.DownloadUrl;
-                        _localManifest.updater.Sha256 = _updaterVersion.ChecksumSha256;
+                        _localManifest.updater.DownloadUrl = _updaterVersion.DownloadUrl;
+                        _localManifest.updater.ChecksumSha256 = _updaterVersion.ChecksumSha256;
                         _localManifest.updater.Size = _updaterVersion.Size;
                         await SaveLocalManifestAsync();
                     }

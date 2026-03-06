@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Net.Http;
 
 namespace GameLauncher
 {
