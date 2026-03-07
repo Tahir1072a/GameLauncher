@@ -19,7 +19,7 @@ namespace GameLauncher
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki!
+        private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
         private const string UPDATER_NAME = "Updater";
@@ -84,6 +84,8 @@ namespace GameLauncher
                 _updaterVersion = await _apiClient.GetLatestVersion("Updater", "Windows");
                 _gameVersion = await _apiClient.GetLatestVersion("AvioTest", "Windows");
 
+                await CheckPhysicalIntegrityAsync();
+
                 string[] args = Environment.GetCommandLineArgs();
                 bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
 
@@ -98,11 +100,11 @@ namespace GameLauncher
                     await SaveLocalManifestAsync();
                 }
 
-                // Updater güncellemesi kontrolü
+                // Updater güncellemesi kontrolü ü
                 if (_updaterVersion.Version > _localManifest.updater.Version)
                 {
                     UpdateStatus("Sistem bileşenleri güncelleniyor...");
-                    var tempFileName = $"{UPDATER_NAME}_${Guid.NewGuid()}_update.zip";
+                    var tempFileName = $"{UPDATER_NAME}_{Guid.NewGuid()}_update.zip";
                     var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
 
                     try
@@ -157,9 +159,11 @@ namespace GameLauncher
                     }
 
                     string updaterExe = Path.Combine(_updaterDirectory, UPDATER_EXE);
+                    
                     if (!File.Exists(updaterExe))
                     {
-                        MessageBox.Show("Kritik Hata: Updater.exe bulunamadı! Lütfen uygulamayı web sitesinden tekrar indirip kurun.", "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
+                        Debug.WriteLine("Updater.exe bulunamadı: " + updaterExe);
+                        //MessageBox.Show("Kritik Hata: Updater.exe bulunamadı! Lütfen uygulamayı web sitesinden tekrar indirip kurun.", "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
 
@@ -653,6 +657,42 @@ namespace GameLauncher
             var options = new JsonSerializerOptions { WriteIndented = true };
             string json = JsonSerializer.Serialize(_localManifest, options);
             await File.WriteAllTextAsync(_localVersionFile, json);
+        }
+
+        private Task CheckPhysicalIntegrityAsync()
+        {
+            bool manifestDirty = false;
+
+            string updaterExePath = Path.Combine(_updaterDirectory, UPDATER_EXE);
+            if (!Directory.Exists(_updaterDirectory) || !File.Exists(updaterExePath))
+            {
+                UpdateStatus("Sistem bileşenleri eksik veya bozuk, Onarılıyor...");
+                _localManifest.updater.Version = new Version("0.0.0");
+                manifestDirty = true;
+            }
+
+            string launcherExePath = Path.Combine(_appDirectory, LAUNCHER_EXE);
+            if (!Directory.Exists(_appDirectory) || !File.Exists(launcherExePath))
+            {
+                UpdateStatus("Sistem bileşenleri eksik veya bozuk, Onarılıyor...");
+                _localManifest.launcher.Version = new Version("0.0.0");
+                manifestDirty = true;
+            }
+
+            string gameExePath = Path.Combine(_gameDirectory, MAIN_EXE);
+            if (!Directory.Exists(_gameDirectory) || !File.Exists(gameExePath))
+            {
+                UpdateStatus("Oyun dosyaları eksik veya bozuk, Onarılıyor...");
+                _localManifest.game.Version = new Version("0.0.0");
+                manifestDirty = true;
+            }
+
+            if (manifestDirty)
+            {
+                return SaveLocalManifestAsync();
+            }
+          
+            return Task.CompletedTask;
         }
 
         private void ShowPlayButton()

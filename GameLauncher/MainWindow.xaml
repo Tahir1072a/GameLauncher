@@ -10,7 +10,7 @@
         AllowsTransparency="True"
         Background="Transparent"
         FontFamily="pack://application:,,,/GameLauncher;component/Assets/Fonts/#Inter"
-        Icon="pack://application:,,,/GameLauncher;component/Assets/logo.png">
+        Icon="pack://application:,,,/GameLauncher;component/Assets/App_icon.ico">
 
 
     <Window.Resources>
@@ -110,11 +110,41 @@
                                 Background="{TemplateBinding Foreground}" 
                                 CornerRadius="6" 
                                 ClipToBounds="True"/>
+                            
+                            <Rectangle>
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                        <GradientStop x:Name="S1" Color="Transparent"  Offset="-0.3"/>
+                                        <GradientStop x:Name="S2" Color="#55FFFFFF"    Offset="-0.1"/>
+                                        <GradientStop x:Name="S3" Color="Transparent"  Offset="0.1"/>
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
                         </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetName="S1"
+                                    Storyboard.TargetProperty="Offset"
+                                    From="-0.3" To="1.2" Duration="0:0:1.5"/>
+                                        <DoubleAnimation Storyboard.TargetName="S2"
+                                    Storyboard.TargetProperty="Offset"
+                                    From="-0.1" To="1.4" Duration="0:0:1.5"/>
+                                        <DoubleAnimation Storyboard.TargetName="S3"
+                                    Storyboard.TargetProperty="Offset"
+                                    From="0.1"  To="1.6" Duration="0:0:1.5"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </ControlTemplate.Triggers>
+
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
+        
         <!-- Progress Bar Brush -->
         <LinearGradientBrush x:Key="FigmaGradientBrush" StartPoint="0,0" EndPoint="1,0">
             <GradientStop Color="#0049FF" Offset="0.0" />

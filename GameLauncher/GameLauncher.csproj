@@ -6,25 +6,17 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <ApplicationIcon>AppIcon_Shadow.ico</ApplicationIcon>
+    <ApplicationIcon>App_icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Assets\background.png" />
-    <None Remove="Assets\bottom.png" />
-    <None Remove="Assets\close.png" />
-    <None Remove="Assets\Fonts\Inter-VariableFont_opsz,wght.ttf" />
-    <None Remove="Assets\logo.png" />
+    <None Remove="App_icon.ico" />
+    <None Remove="Assets\App_icon.ico" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="AppIcon_Shadow.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="Assets\App_icon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+    <Resource Include="App_icon.ico" />
+    <Resource Include="Assets\App_icon.ico" />
     <Resource Include="Assets\background.png" />
     <Resource Include="Assets\bottom.png" />
     <Resource Include="Assets\close.png" />
