@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using Sentry;
 using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
 using GameLauncher.Services.Concrete;
@@ -154,6 +155,7 @@ namespace GameLauncher
                     }
                     catch (Exception ex)
                     {
+                        SentrySdk.CaptureException(ex);
                         MessageBox.Show($"Updater güncellenemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -179,6 +181,7 @@ namespace GameLauncher
                     }
                     catch (Exception ex)
                     {
+                        SentrySdk.CaptureException(ex);
                         MessageBox.Show($"Güncelleme dosyası indirilemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -187,8 +190,10 @@ namespace GameLauncher
                     
                     if (!File.Exists(updaterExe))
                     {
-                        Debug.WriteLine("Updater.exe bulunamadı: " + updaterExe);
-                        //MessageBox.Show("Kritik Hata: Updater.exe bulunamadı! Lütfen uygulamayı web sitesinden tekrar indirip kurun.", "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
+                        SentrySdk.CaptureMessage("Updater.exe bulunamadı: " + updaterExe, SentryLevel.Error);
+                        MessageBox.Show("Kritik sistem dosyası eksik. Lütfen uygulamayı yeniden kurun.",
+                            "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
+                        Application.Current.Shutdown();
                         return;
                     }
 
@@ -211,6 +216,7 @@ namespace GameLauncher
                     }
                     catch (Exception ex)
                     {
+                        SentrySdk.CaptureException(ex);
                         MessageBox.Show($"Updater başlatılamadı:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -286,6 +292,7 @@ namespace GameLauncher
                 }
                 else
                 {
+                    SentrySdk.CaptureException(ex);
                     UpdateStatus("Kritik Hata Oluştu!");
                     MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}", "Kritik Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                     Application.Current.Shutdown();
@@ -448,6 +455,7 @@ namespace GameLauncher
                 }
                 catch (Exception ex)
                 {
+                    SentrySdk.CaptureException(ex);
                     MessageBox.Show($"Uygulama başlatılamadı: {ex.Message}", "Hata",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
