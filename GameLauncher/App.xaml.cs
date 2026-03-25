@@ -9,6 +9,25 @@ namespace GameLauncher
     /// </summary>
     public partial class App : Application
     {
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            //DispatcherUnhandledException += (s, ex) =>
+            //{
+            //    LogError(ex.Exception);
+            //    ex.Handled = true; // Uygulamayı çökertme
+            //    ShowFriendlyError("Beklenmeyen bir hata oluştu. Uygulama yeniden başlatılıyor...");
+            //    RestartApp();
+            //};
+
+
+        }
+    }
+
+    public enum ErrorSeverity
+    {
+        Silent,
+        Warning,
+        Critical
     }
 
 }
