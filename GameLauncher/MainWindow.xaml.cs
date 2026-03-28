@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
-using Sentry;
 using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
 using GameLauncher.Services.Concrete;
@@ -145,19 +144,21 @@ namespace GameLauncher
                     }
                     catch (IOException ex)
                     {
+                        _logger.LogWarning(ex, "Updater güncellenirken dosyalar kilitliydi.");
                         UpdateStatus("Dosyalar kilitli!", isOffline: true);
                         MessageBox.Show("Oyun dosyaları şu anda başka bir program tarafından kullanılıyor.\n\nLütfen oyunun kapalı olduğundan emin olun ve tekrar deneyin.",
                                         "Dosya Kilitli", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     catch (UnauthorizedAccessException ex)
                     {
+                        _logger.LogWarning(ex, "Updater güncellenirken yetki hatası.");
                         UpdateStatus("Erişim engellendi!", isOffline: true);
                         MessageBox.Show("Dosyalara erişim izni yok. Antivirüs programınız kurulumu engelliyor olabilir veya Launcher'ı Yönetici olarak çalıştırmanız gerekebilir.",
                                         "Erişim Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                     catch (Exception ex)
                     {
-                        SentrySdk.CaptureException(ex);
+                        _logger.LogError(ex, "Updater güncellenemedi.");
                         MessageBox.Show($"Updater güncellenemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -183,7 +184,7 @@ namespace GameLauncher
                     }
                     catch (Exception ex)
                     {
-                        SentrySdk.CaptureException(ex);
+                        _logger.LogError(ex, "Launcher güncelleme dosyası indirilemedi.");
                         MessageBox.Show($"Güncelleme dosyası indirilemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -192,7 +193,7 @@ namespace GameLauncher
                     
                     if (!File.Exists(updaterExe))
                     {
-                        SentrySdk.CaptureMessage("Updater.exe bulunamadı: " + updaterExe, SentryLevel.Error);
+                        _logger.LogError("Kritik Hata: Updater.exe bulunamadı: {UpdaterExe}", updaterExe);
                         MessageBox.Show("Kritik sistem dosyası eksik. Lütfen uygulamayı yeniden kurun.",
                             "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
                         Application.Current.Shutdown();
@@ -218,7 +219,7 @@ namespace GameLauncher
                     }
                     catch (Exception ex)
                     {
-                        SentrySdk.CaptureException(ex);
+                        _logger.LogError(ex, "Updater işlemi başlatılamadı.");
                         MessageBox.Show($"Updater başlatılamadı:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                         return;
                     }
@@ -274,12 +275,14 @@ namespace GameLauncher
             }
             catch (IOException ex)
             {
+                _logger.LogWarning(ex, "Oyun güncellemesi sırasında dosyalar kilitliydi.");
                 UpdateStatus("Dosyalar kilitli!", isOffline: true);
                 MessageBox.Show("Oyun dosyaları şu anda başka bir program tarafından kullanılıyor.\n\nLütfen oyunun kapalı olduğundan emin olun ve tekrar deneyin.",
                                 "Dosya Kilitli", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (UnauthorizedAccessException ex)
             {
+                _logger.LogWarning(ex, "Oyun güncellemesi sırasında erişim reddedildi.");
                 UpdateStatus("Erişim engellendi!", isOffline: true);
                 MessageBox.Show("Dosyalara erişim izni yok. Antivirüs programınız kurulumu engelliyor olabilir veya Launcher'ı Yönetici olarak çalıştırmanız gerekebilir.",
                                 "Erişim Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -288,13 +291,14 @@ namespace GameLauncher
             {
                 if (ex.Message.Contains("3 kez"))
                 {
+                    _logger.LogWarning(ex, "Dosya indirme 3 denemeden sonra hala başarısız.");
                     UpdateStatus("Bağlantı veya disk sorunu", isOffline: true);
                     MessageBox.Show(ex.Message, "İndirme Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
                     // KAPANMIYOR, kullanıcı Retry butonuna basabilir.
                 }
                 else
                 {
-                    SentrySdk.CaptureException(ex);
+                    _logger.LogCritical(ex, "Uygulama başlatılırken kritik bir hata oluştu.");
                     UpdateStatus("Kritik Hata Oluştu!");
                     MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}", "Kritik Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                     Application.Current.Shutdown();
@@ -457,7 +461,7 @@ namespace GameLauncher
                 }
                 catch (Exception ex)
                 {
-                    SentrySdk.CaptureException(ex);
+                    _logger.LogError(ex, "İnternet bağlantısı yok iken uygulama başlatılamadı.");
                     MessageBox.Show($"Uygulama başlatılamadı: {ex.Message}", "Hata",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
@@ -646,6 +650,7 @@ namespace GameLauncher
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Ana uygulama Başlat butonu üzerinden başlatılamadı.");
                 MessageBox.Show($"Uygulama başlatılamadı: {ex.Message}", "Hata",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
