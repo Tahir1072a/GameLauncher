@@ -1,3 +1,7 @@
+using GameLauncher.Services.Abstract;
+using GameLauncher.Services.Concrete;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Sentry;
 using System.Configuration;
 using System.Data;
@@ -12,39 +16,43 @@ namespace GameLauncher
     /// </summary>
     public partial class App : Application
     {
-        public IServiceProvider ServiceProvider {get; private set;  }
+        public IServiceProvider ServiceProvider { get; private set; }
 
         public App()
         {
             DispatcherUnhandledException += App_DispatcherUnhandledException;
-            
+
             var services = new ServiceCollection();
             ConfigureServices(services);
             ServiceProvider = services.BuildServiceProvider();
         }
 
-        private void ConfigureServices(IServiceCollection services) 
+        private void ConfigureServices(IServiceCollection services)
         {
-            services.AddLogging(builder => {
+            services.AddLogging(builder =>
+            {
                 builder.SetMinimumLevel(LogLevel.Debug);
                 builder.AddDebug(); // Outputa aktarıyoruz.
 
                 // ILogger logları otomatik olarak sentry'e gider.
-                builder.AddSentry(options => {
+                builder.AddSentry(options =>
+                {
                     options.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
                     options.MinimumBreadcrumbLevel = LogLevel.Information;
                     options.MinimumEventLevel = LogLevel.Error;
                 });
             });
 
-            services.AddHttpClient<IVersionService, VersionService>(client => {
+            services.AddHttpClient<IVersionService, VersionService>(client =>
+            {
                 client.BaseAddress = new Uri("https://versioncontrolmanagement-production.up.railway.app");
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
                 client.Timeout = TimeSpan.FromMinutes(5);
             });
 
             services.AddTransient<IFileService, FileService>();
-            services.AddHttpClient<INetworkService, NetworkService>(client => {
+            services.AddHttpClient<INetworkService, NetworkService>(client =>
+            {
                 client.BaseAddress = new Uri("https://files.aviotest.org");
                 client.Timeout = TimeSpan.FromMinutes(5);
             });
@@ -58,7 +66,7 @@ namespace GameLauncher
             var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
             mainWindow.Show();
         }
-        
+
 
         void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {

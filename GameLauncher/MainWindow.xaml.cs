@@ -36,7 +36,6 @@ namespace GameLauncher
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
 
-        private readonly VersionService _versionService;
 
         private ServerManifest _localManifest;
         private AppVersionDto _launcherVersion;
@@ -44,9 +43,10 @@ namespace GameLauncher
         private AppVersionDto _gameVersion;
 
         private readonly INetworkService _networkService;
+        private readonly IVersionService _versionService;
         private readonly IFileService _fileService;
 
-        public MainWindow()
+        public MainWindow(IVersionService versionService, INetworkService networkService, IFileService fileService)
         {
             InitializeComponent();
             // Local App Klasör Yolunu getirir.
@@ -57,10 +57,9 @@ namespace GameLauncher
             _gameDirectory = Path.Combine(_appDirectory, "Game");
             _backupDirectory = Path.Combine(_appDirectory, "Backups");
 
-            _versionService = new VersionService();
-
-            _networkService = new NetworkService();
-            _fileService = new FileService();
+            _versionService = versionService;
+            _networkService = networkService;
+            _fileService = fileService;
 
             Loaded += async (s, e) => await InitializeAsync();
 
