@@ -316,9 +316,9 @@ namespace GameLauncher
                     await _fileService.DeleteFileAsync(filePath);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Debug.WriteLine("Eski dosyalar silinemedi: " + ex.Message);
+                _logger.LogError(ex, "Eski dosyalar silinemedi");
             }
         }
 
