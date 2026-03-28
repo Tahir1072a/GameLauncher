@@ -65,19 +65,16 @@ namespace GameLauncher.Services.Concrete
             }
             catch (HttpRequestException ex) when (ex.InnerException is System.Security.Authentication.AuthenticationException)
             {
-                // SSL/TLS sertifika hatası
                 _logger.LogWarning(ex, "SSL/TLS sertifika doğrulaması başarısız");
                 return false;
             }
             catch (HttpRequestException ex)
             {
-                // Diğer HTTP hataları (bağlantı reddedildi, proxy hatası vb.)
                 _logger.LogWarning(ex, "HTTP isteği başarısız");
                 return false;
             }
             catch (TaskCanceledException)
             {
-                // 15 sn timeout aşıldı
                 _logger.LogWarning("Bağlantı kontrolü zaman aşımına uğradı (15sn)");
                 return false;
             }

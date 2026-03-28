@@ -14,6 +14,7 @@ using Sentry;
 using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
 using GameLauncher.Services.Concrete;
+using Microsoft.Extensions.Logging;
 
 namespace GameLauncher
 {
@@ -46,7 +47,7 @@ namespace GameLauncher
         private readonly IVersionService _versionService;
         private readonly IFileService _fileService;
 
-        private readonly MainWindow _logger;
+        private readonly ILogger<MainWindow> _logger;
 
         public MainWindow(ILogger<MainWindow> logger, IVersionService versionService, INetworkService networkService, IFileService fileService)
         {
