@@ -1,4 +1,10 @@
+using GameLauncher.Entites;
+using GameLauncher.Services.Abstract;
+using Microsoft.Extensions.Logging;
 using System.Net;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace GameLauncher.Services.Concrete
 {
@@ -10,7 +16,7 @@ namespace GameLauncher.Services.Concrete
         private readonly HttpClient _httpClient;
         private readonly ILogger _logger;
 
-        public VersionService(ILogger<VersionService> logger, HttpClient httpClient) 
+        public VersionService(ILogger<IVersionService> logger, HttpClient httpClient) 
         {
             _logger = logger;
             _httpClient = httpClient;

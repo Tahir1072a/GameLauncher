@@ -1,4 +1,5 @@
 using GameLauncher.Services.Abstract;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -44,7 +45,7 @@ namespace GameLauncher.Services.Concrete
         {
             try
             {
-                var request = new HttpRequestMessage(HttpMethod.Head, _httpClient.BaseAddress + "/version.json");
+                var request = new HttpRequestMessage(HttpMethod.Head, _httpClient.BaseAddress + "version.json");
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
@@ -182,17 +183,30 @@ namespace GameLauncher.Services.Concrete
                 int bytesRead;
 
                 var stopwatch = Stopwatch.StartNew();
-                DateTime lastUpdate = DateTime.MinValue;
+                var updateStopwatch = Stopwatch.StartNew();
+
+                long lastSnapshotBytes = 0;
+                double lastSnapshotSeconds = 0;
 
                 while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 {
                     await fileStream.WriteAsync(buffer, 0, bytesRead);
                     totalRead += bytesRead;
-                    double speedMBps = totalRead / stopwatch.Elapsed.TotalSeconds / 1024 / 1024;
 
-                    if (canReport && (DateTime.Now - lastUpdate).TotalMilliseconds > 500)
+                    if (canReport && updateStopwatch.ElapsedMilliseconds > 32)
                     {
-                        lastUpdate = DateTime.Now;
+                        double nowSeconds = stopwatch.Elapsed.TotalSeconds;
+
+                        double intervalSeconds = nowSeconds - lastSnapshotSeconds;
+                        double intervalBytes = totalRead - lastSnapshotBytes;
+                        double speedMBps = intervalSeconds > 0
+                            ? intervalBytes / intervalSeconds / 1024 / 1024
+                            : 0;
+
+                        lastSnapshotBytes = totalRead;
+                        lastSnapshotSeconds = nowSeconds;
+                        updateStopwatch.Restart();
+
                         var percentage = (double)totalRead / totalBytes * 100;
                         progress.Report(new DownloadState(percentage, speedMBps));
                     }
