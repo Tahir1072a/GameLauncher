@@ -10,6 +10,13 @@ namespace GameLauncher.Services.Concrete
 {
     public class FileService : IFileService
     {
+        private readonly ILogger<FileService> _logger;
+
+        public FileService(ILogger<FileService> logger)
+        {
+            _logger = logger;
+        }
+
         public Task CleanDirectoryAsync(string directoryPath)
         {
             return Task.Run(() =>
@@ -76,6 +83,20 @@ namespace GameLauncher.Services.Concrete
 
         public Task ExtractZipAsync(string sourceArchiveFilePath, string extractPath, bool overwrite = true)
         {
+            try
+            {
+
+
+            }
+            catch (InvalidDataException ex)
+            {
+
+            }
+            catch (IOException ex)
+            {
+
+            }
+
             return Task.Run(() =>
             {
                 if (!Directory.Exists(extractPath))

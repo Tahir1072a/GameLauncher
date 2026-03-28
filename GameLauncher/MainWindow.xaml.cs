@@ -46,7 +46,9 @@ namespace GameLauncher
         private readonly IVersionService _versionService;
         private readonly IFileService _fileService;
 
-        public MainWindow(IVersionService versionService, INetworkService networkService, IFileService fileService)
+        private readonly MainWindow _logger;
+
+        public MainWindow(ILogger<MainWindow> logger, IVersionService versionService, INetworkService networkService, IFileService fileService)
         {
             InitializeComponent();
             // Local App Klasör Yolunu getirir.
@@ -60,6 +62,7 @@ namespace GameLauncher
             _versionService = versionService;
             _networkService = networkService;
             _fileService = fileService;
+            _logger = logger;
 
             Loaded += async (s, e) => await InitializeAsync();
 
