@@ -7,7 +7,7 @@ namespace GameLauncher.Services.Abstract
 {
     public interface INetworkService
     {
-        Task<bool> CheckInternetConnectionAsync(string url);
+        Task<bool> CheckInternetConnectionAsync();
         Task DownloadFilesAsync(string url, string destinationPath, IProgress<DownloadState> progress = null);
     }
 }

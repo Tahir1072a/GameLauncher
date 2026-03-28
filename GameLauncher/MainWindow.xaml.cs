@@ -22,7 +22,6 @@ namespace GameLauncher
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const string VERSION_URL = "https://files.aviotest.org/version.json"; // R2 linki
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
         private const string UPDATER_NAME = "Updater";
@@ -37,7 +36,7 @@ namespace GameLauncher
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
 
-        private readonly ApiClient _apiClient;
+        private readonly VersionService _versionService;
 
         private ServerManifest _localManifest;
         private AppVersionDto _launcherVersion;
@@ -58,7 +57,7 @@ namespace GameLauncher
             _gameDirectory = Path.Combine(_appDirectory, "Game");
             _backupDirectory = Path.Combine(_appDirectory, "Backups");
 
-            _apiClient = new ApiClient();
+            _versionService = new VersionService();
 
             _networkService = new NetworkService();
             _fileService = new FileService();
@@ -87,9 +86,9 @@ namespace GameLauncher
                 UpdateStatus("Versiyonlar kontrol ediliyor...");
 
                 // Verison manifestlarını yükle
-                _launcherVersion = await _apiClient.GetLatestVersion("Launcher", "Windows");
-                _updaterVersion = await _apiClient.GetLatestVersion("Updater", "Windows");
-                _gameVersion = await _apiClient.GetLatestVersion("AvioTest", "Windows");
+                _launcherVersion = await _versionService.GetLatestVersion("Launcher", "Windows");
+                _updaterVersion = await _versionService.GetLatestVersion("Updater", "Windows");
+                _gameVersion = await _versionService.GetLatestVersion("AvioTest", "Windows");
 
                 if (_launcherVersion == null || _updaterVersion == null || _gameVersion == null)
                 {
@@ -437,7 +436,7 @@ namespace GameLauncher
         private async Task<bool> CheckInternetConnectionAsync()
         {
             UpdateStatus("İnternet bağlantısı kontrol ediliyor...");
-            return await _networkService.CheckInternetConnectionAsync(VERSION_URL);
+            return await _networkService.CheckInternetConnectionAsync();
         }
 
         private void HandleNoInternetConnection()

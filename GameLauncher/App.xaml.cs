@@ -1,4 +1,4 @@
-﻿using Sentry;
+using Sentry;
 using System.Configuration;
 using System.Data;
 using System.Diagnostics;
@@ -12,33 +12,58 @@ namespace GameLauncher
     /// </summary>
     public partial class App : Application
     {
+        public IServiceProvider ServiceProvider {get; private set;  }
+
         public App()
         {
             DispatcherUnhandledException += App_DispatcherUnhandledException;
-            SentrySdk.Init(o =>
-            {
-                o.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
-                // When configuring for the first time, to see what the SDK is doing:
-                o.Debug = true;
+            
+            var services = new ServiceCollection();
+            ConfigureServices(services);
+            ServiceProvider = services.BuildServiceProvider();
+        }
+
+        private void ConfigureServices(IServiceCollection services) 
+        {
+            services.AddLogging(builder => {
+                builder.SetMinimumLevel(LogLevel.Debug);
+                builder.AddDebug(); // Outputa aktarıyoruz.
+
+                // ILogger logları otomatik olarak sentry'e gider.
+                builder.AddSentry(options => {
+                    options.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
+                    options.MinimumBreadcrumbLevel = LogLevel.Information;
+                    options.MinimumEventLevel = LogLevel.Error;
+                });
             });
 
-            // Background thread hataları
-            AppDomain.CurrentDomain.UnhandledException += (s, ex) =>
-            {
-                SentrySdk.CaptureException(ex.ExceptionObject as Exception);
-            };
+            services.AddHttpClient<IVersionService, VersionService>(client => {
+                client.BaseAddress = new Uri("https://versioncontrolmanagement-production.up.railway.app");
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            });
 
-            // async/await hataları
-            TaskScheduler.UnobservedTaskException += (s, ex) =>
-            {
-                SentrySdk.CaptureException(ex.Exception);
-                ex.SetObserved();
-            };
+            services.AddTransient<IFileService, FileService>();
+            services.AddHttpClient<INetworkService, NetworkService>(client => {
+                client.BaseAddress = new Uri("https://files.aviotest.org");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            });
+
+            services.AddTransient<MainWindow>();
         }
+
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+            var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
+            mainWindow.Show();
+        }
+        
 
         void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            SentrySdk.CaptureException(e.Exception);
+            var logger = ServiceProvider.GetRequiredService<ILogger<App>>();
+            logger.LogCritical(e.Exception, "Yakalanmamış/Beklenmeyen UI thread hatası");
             e.Handled = true;
         }
     }
