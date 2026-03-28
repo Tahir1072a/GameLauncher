@@ -81,8 +81,9 @@ namespace GameLauncher.Services.Concrete
             {
                 try
                 {
+                    // Oyunun ilk kez kurulduğuna işarettir bu. Yedekleme yapacak bir şey yoktur.
                     if (!Directory.Exists(sourcePath))
-                        throw new FileNotFoundException("Kaynak dizin bulunamadı.", sourcePath);
+                        return;
 
                     if (Directory.Exists(backupPath))
                     {
