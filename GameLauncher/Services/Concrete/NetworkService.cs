@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace GameLauncher.Services.Concrete
 {
@@ -186,9 +187,17 @@ namespace GameLauncher.Services.Concrete
                 long lastSnapshotBytes = 0;
                 double lastSnapshotSeconds = 0;
 
-                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                using var cts = new CancellationTokenSource();
+
+                while (true)
                 {
-                    await fileStream.WriteAsync(buffer, 0, bytesRead);
+                    // Veri geldikçe bu sayaç yeniden 40 saniyeye kurulacak. (TaskCanceledException)
+                    cts.CancelAfter(TimeSpan.FromSeconds(40)); 
+
+                    bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
+                    if (bytesRead == 0) break; // Sunucu normal şekilde veri akışının bittiğini bildirdi
+
+                    await fileStream.WriteAsync(buffer, 0, bytesRead, cts.Token);
                     totalRead += bytesRead;
 
                     if (canReport && updateStopwatch.ElapsedMilliseconds > 32)

@@ -47,7 +47,7 @@ namespace GameLauncher
             {
                 client.BaseAddress = new Uri("https://versioncontrolmanagement-production.up.railway.app");
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
-                client.Timeout = TimeSpan.FromMinutes(5);
+                client.Timeout = TimeSpan.FromSeconds(30);
             });
 
             services.AddTransient<IFileService, FileService>();
@@ -55,7 +55,7 @@ namespace GameLauncher
             services.AddHttpClient<INetworkService, NetworkService>(client =>
             {
                 client.BaseAddress = new Uri("https://files.aviotest.org");
-                client.Timeout = TimeSpan.FromMinutes(5);
+                client.Timeout = TimeSpan.FromSeconds(45);
             });
             services.AddTransient<ISystemUpdateService, SystemUpdateService>();
             services.AddTransient<IAppService, AppService>();
