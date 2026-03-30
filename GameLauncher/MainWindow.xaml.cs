@@ -40,7 +40,9 @@ namespace GameLauncher
         private readonly ILogger<MainWindow> _logger;
         private readonly IProgress<DownloadState> _progressReporter;
 
-        private const string FALLBACK_URL = "https://static.aviotest.org/fallback.json"; // Statik fallback url'i
+        private const string GAME_FALLBACK_URL = "https://files.aviotest.org/FallbackVersionFiles/game_fallback.json";
+        private const string LAUNCHER_FALLBACK_URL = "https://files.aviotest.org/FallbackVersionFiles/launcher_fallback.json";
+        private const string UPDATER_FALLBACK_URL = "https://files.aviotest.org/FallbackVersionFiles/updater_fallback.json";
 
         public MainWindow(
             ILogger<MainWindow> logger, 
@@ -128,9 +130,9 @@ namespace GameLauncher
                 if (_launcherVersion == null && _updaterVersion == null && _gameVersion == null)
                 {
                     // Fallback Destekli Versiyon Çekimi
-                    _launcherVersion = await _versionService.GetLatestVersionWithFallbackAsync("Launcher", "Windows", FALLBACK_URL);
-                    _updaterVersion = await _versionService.GetLatestVersionWithFallbackAsync("Updater", "Windows", FALLBACK_URL);
-                    _gameVersion = await _versionService.GetLatestVersionWithFallbackAsync("AvioTest", "Windows", FALLBACK_URL);
+                    _launcherVersion = await _versionService.GetLatestVersionWithFallbackAsync("Launcher", "Windows", LAUNCHER_FALLBACK_URL);
+                    _updaterVersion = await _versionService.GetLatestVersionWithFallbackAsync("Updater", "Windows", UPDATER_FALLBACK_URL);
+                    _gameVersion = await _versionService.GetLatestVersionWithFallbackAsync("AvioTest", "Windows", GAME_FALLBACK_URL);
                     
                     if (_launcherVersion != null || _updaterVersion != null || _gameVersion != null)
                     {
