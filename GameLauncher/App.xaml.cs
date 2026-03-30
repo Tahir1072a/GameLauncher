@@ -51,11 +51,14 @@ namespace GameLauncher
             });
 
             services.AddTransient<IFileService, FileService>();
+            services.AddTransient<IAppLauncherService, AppLauncherService>();
             services.AddHttpClient<INetworkService, NetworkService>(client =>
             {
                 client.BaseAddress = new Uri("https://files.aviotest.org");
                 client.Timeout = TimeSpan.FromMinutes(5);
             });
+            services.AddTransient<ISystemUpdateService, SystemUpdateService>();
+            services.AddTransient<IAppService, AppService>();
 
             services.AddTransient<MainWindow>();
         }

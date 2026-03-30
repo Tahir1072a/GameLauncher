@@ -1,32 +1,22 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
-using System.Net;
-using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media.Animation;
+using System.Net.Http;
 using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
-using GameLauncher.Services.Concrete;
 using Microsoft.Extensions.Logging;
 
 namespace GameLauncher
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         private const string APP_NAME = "avio-test";
         private const string MAIN_EXE = "AvioTest.exe";
-        private const string UPDATER_NAME = "Updater";
         private const string UPDATER_EXE = "Updater.exe";
-        private const string LAUNCHER_NAME = "GameLauncher";
         private const string LAUNCHER_EXE = "GameLauncher.exe";
 
         private readonly string _localAppData;
@@ -36,7 +26,6 @@ namespace GameLauncher
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
 
-
         private ServerManifest _localManifest;
         private AppVersionDto _launcherVersion;
         private AppVersionDto _updaterVersion;
@@ -44,14 +33,24 @@ namespace GameLauncher
 
         private readonly INetworkService _networkService;
         private readonly IVersionService _versionService;
-        private readonly IFileService _fileService;
+        private readonly IAppLauncherService _appLauncherService;
+        private readonly ISystemUpdateService _systemUpdateService;
+        private readonly IAppService _appService;
 
         private readonly ILogger<MainWindow> _logger;
+        private readonly IProgress<DownloadState> _progressReporter;
 
-        public MainWindow(ILogger<MainWindow> logger, IVersionService versionService, INetworkService networkService, IFileService fileService)
+        private const string FALLBACK_URL = "https://static.aviotest.org/fallback.json"; // Statik fallback url'i
+
+        public MainWindow(
+            ILogger<MainWindow> logger, 
+            IVersionService versionService, 
+            INetworkService networkService, 
+            IAppLauncherService appLauncherService,
+            ISystemUpdateService systemUpdateService,
+            IAppService appService)
         {
             InitializeComponent();
-            // Local App Klasör Yolunu getirir.
             _localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _appDirectory = Path.Combine(_localAppData, APP_NAME);
             _updaterDirectory = Path.Combine(_appDirectory, "System");
@@ -61,11 +60,22 @@ namespace GameLauncher
 
             _versionService = versionService;
             _networkService = networkService;
-            _fileService = fileService;
+            _appLauncherService = appLauncherService;
+            _systemUpdateService = systemUpdateService;
+            _appService = appService;
             _logger = logger;
 
-            Loaded += async (s, e) => await InitializeAsync();
+            _progressReporter = new Progress<DownloadState>(state =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    DownloadProgress.Value = state.Percentage;
+                    PercentageText.Text = $"%{state.Percentage:F0}";
+                    SpeedText.Text = $"{state.SpeedMBps:F2} MB/s";
+                });
+            });
 
+            Loaded += async (s, e) => await InitializeAsync();
         }
 
         private async Task InitializeAsync()
@@ -85,15 +95,53 @@ namespace GameLauncher
                     return;
                 }
 
+                string[] args = Environment.GetCommandLineArgs();
+                bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
+                string cachedVersionsFile = Path.Combine(_appDirectory, "cached_versions.json");
+
                 UpdateStatus("Versiyonlar kontrol ediliyor...");
 
-                // Verison manifestlarını yükle
-                _launcherVersion = await _versionService.GetLatestVersion("Launcher", "Windows");
-                _updaterVersion = await _versionService.GetLatestVersion("Updater", "Windows");
-                _gameVersion = await _versionService.GetLatestVersion("AvioTest", "Windows");
-
-                if (_launcherVersion == null || _updaterVersion == null || _gameVersion == null)
+                if (justUpdated && File.Exists(cachedVersionsFile))
                 {
+                    _logger.LogInformation("Post-update tetiklendi, versiyonlar yerel cache üzerinden yükleniyor...");
+                    try
+                    {
+                        var cacheJson = await File.ReadAllTextAsync(cachedVersionsFile);
+                        var cachedData = JsonSerializer.Deserialize<ServerManifest>(cacheJson);
+                        if (cachedData != null)
+                        {
+                            _launcherVersion = cachedData.launcher;
+                            _updaterVersion = cachedData.updater;
+                            _gameVersion = cachedData.game;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Yerel versiyon cache'i okunamadı. Hatadan kaçınmak için API'ye dönülecek.");
+                    }
+                    finally
+                    {
+                        try { File.Delete(cachedVersionsFile); } catch { }
+                    }
+                }
+
+                if (_launcherVersion == null && _updaterVersion == null && _gameVersion == null)
+                {
+                    // Fallback Destekli Versiyon Çekimi
+                    _launcherVersion = await _versionService.GetLatestVersionWithFallbackAsync("Launcher", "Windows", FALLBACK_URL);
+                    _updaterVersion = await _versionService.GetLatestVersionWithFallbackAsync("Updater", "Windows", FALLBACK_URL);
+                    _gameVersion = await _versionService.GetLatestVersionWithFallbackAsync("AvioTest", "Windows", FALLBACK_URL);
+                    
+                    if (_launcherVersion != null || _updaterVersion != null || _gameVersion != null)
+                    {
+                        var cacheObj = new ServerManifest { launcher = _launcherVersion, updater = _updaterVersion, game = _gameVersion };
+                        await File.WriteAllTextAsync(cachedVersionsFile, JsonSerializer.Serialize(cacheObj));
+                    }
+                }
+
+                if (_launcherVersion == null && _updaterVersion == null && _gameVersion == null)
+                {
+                    _logger.LogWarning("Hiçbir versiyon bilgisi alınamadı, offline moda geçiliyor.");
                     UpdateStatus("Sunucuya bağlanılamadı", isOffline: true);
                     HandleNoInternetConnection();
                     return;
@@ -101,155 +149,48 @@ namespace GameLauncher
 
                 await CheckPhysicalIntegrityAsync();
 
-                string[] args = Environment.GetCommandLineArgs();
-                bool justUpdated = Array.Exists(args, arg => arg == "/post_update");
-
                 if (justUpdated)
                 {
                     UpdateStatus("Güncelleme tamamlandı, yapılandırılıyor...");
-
-                    _localManifest.launcher.Version = _launcherVersion.Version;
-                    _localManifest.launcher.DownloadUrl = _launcherVersion.DownloadUrl;
-                    _localManifest.launcher.ChecksumSha256 = _launcherVersion.ChecksumSha256;
-                    _localManifest.launcher.Size = _launcherVersion.Size;
-                    await SaveLocalManifestAsync();
-                }
-
-                // Updater güncellemesi kontrolü
-                if (_updaterVersion.Version > _localManifest.updater.Version)
-                {
-                    UpdateStatus("Sistem bileşenleri güncelleniyor...");
-                    var tempFileName = $"{UPDATER_NAME}_{Guid.NewGuid()}_update.zip";
-                    var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
-
-                    try
+                    if (_launcherVersion != null)
                     {
-                        await DownloadFileAsync(_updaterVersion.DownloadUrl, tempZipPath);
-
-
-                        if (Directory.Exists(_updaterDirectory))
-                        {
-                            Directory.Delete(_updaterDirectory, true);
-                        }
-
-                        await _fileService.ExtractZipAsync(tempZipPath, _updaterDirectory);
-
-                        await CleanupOldUpdaterFiles();
-
-                        _localManifest.updater.Version = _updaterVersion.Version;
-                        _localManifest.updater.DownloadUrl = _updaterVersion.DownloadUrl;
-                        _localManifest.updater.ChecksumSha256 = _updaterVersion.ChecksumSha256;
-                        _localManifest.updater.Size = _updaterVersion.Size;
+                        _localManifest.launcher.Version = _launcherVersion.Version;
+                        _localManifest.launcher.DownloadUrl = _launcherVersion.DownloadUrl;
+                        _localManifest.launcher.ChecksumSha256 = _launcherVersion.ChecksumSha256;
+                        _localManifest.launcher.Size = _launcherVersion.Size;
                         await SaveLocalManifestAsync();
                     }
-                    catch (IOException ex)
-                    {
-                        _logger.LogWarning(ex, "Updater güncellenirken dosyalar kilitliydi.");
-                        UpdateStatus("Dosyalar kilitli!", isOffline: true);
-                        MessageBox.Show("Oyun dosyaları şu anda başka bir program tarafından kullanılıyor.\n\nLütfen oyunun kapalı olduğundan emin olun ve tekrar deneyin.",
-                                        "Dosya Kilitli", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                    catch (UnauthorizedAccessException ex)
-                    {
-                        _logger.LogWarning(ex, "Updater güncellenirken yetki hatası.");
-                        UpdateStatus("Erişim engellendi!", isOffline: true);
-                        MessageBox.Show("Dosyalara erişim izni yok. Antivirüs programınız kurulumu engelliyor olabilir veya Launcher'ı Yönetici olarak çalıştırmanız gerekebilir.",
-                                        "Erişim Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Updater güncellenemedi.");
-                        MessageBox.Show($"Updater güncellenemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-                    finally
-                    {
-                        if (File.Exists(tempZipPath))
-                        {
-                            try { File.Delete(tempZipPath); } catch { /* Silinemezse, Windows halleder */ }
-                        }
-                    }
                 }
 
-                // Laucnher güncelleme kontrolü
-                if (_launcherVersion.Version > _localManifest.launcher.Version)
+                // Sistem Güncellemesi (Launcher / Updater)
+                UpdateStatus("Sistem bileşenleri güncelleniyor...");
+                bool systemUpdatedAndNeedsRestart = await _systemUpdateService.CheckAndUpdateSystemComponentsAsync(
+                    _launcherVersion, _updaterVersion, _localManifest, _appDirectory, _updaterDirectory, _progressReporter);
+                
+                if (systemUpdatedAndNeedsRestart)
                 {
-                    UpdateStatus("Sistem bileşenleri güncelleniyor...");
-                    var tempFileName = $"{LAUNCHER_NAME}_${Guid.NewGuid()}_launcher.zip";
-                    var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
-
-                    try
-                    {
-                        await DownloadFileAsync(_launcherVersion.DownloadUrl, tempZipPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Launcher güncelleme dosyası indirilemedi.");
-                        MessageBox.Show($"Güncelleme dosyası indirilemedi:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-
-                    string updaterExe = Path.Combine(_updaterDirectory, UPDATER_EXE);
-                    
-                    if (!File.Exists(updaterExe))
-                    {
-                        _logger.LogError("Kritik Hata: Updater.exe bulunamadı: {UpdaterExe}", updaterExe);
-                        MessageBox.Show("Kritik sistem dosyası eksik. Lütfen uygulamayı yeniden kurun.",
-                            "Dosya Eksik", MessageBoxButton.OK, MessageBoxImage.Error);
-                        Application.Current.Shutdown();
-                        return;
-                    }
-
-                    var startInfo = new ProcessStartInfo
-                    {
-                        FileName = updaterExe,
-                        // ARGÜMANLARIN ANLAMI:
-                        // /mode:launcher       -> "Ben Launcher'ı güncelleyeceğim" modu.
-                        // /source:"..."        -> "Zip dosyası burada, bunu al."
-                        // /target:"..."        -> "Launcher'ın olduğu klasör burası."
-                        // /pid:1234            -> "Bu ID'li program (Launcher) kapanana kadar bekle."
-                        Arguments = $"/mode:launcher /source:\"{tempZipPath}\" /target:\"{_appDirectory}\" /pid:{Process.GetCurrentProcess().Id}",
-                        UseShellExecute = true,
-                        WorkingDirectory = Path.GetDirectoryName(updaterExe)
-                    };
-
-                    try
-                    {
-                        Process.Start(startInfo);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Updater işlemi başlatılamadı.");
-                        MessageBox.Show($"Updater başlatılamadı:\n{ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-
-                    // 4. UYGULAMAYI KAPAT (Sahne artık Updater'ın)
+                    // Uygulamayı kapat, Updater işini yapacak
                     Application.Current.Shutdown();
                     return;
                 }
+                
+                await SaveLocalManifestAsync(); // Updater vs güncellendiyse listeyi kaydet
 
-                // Game update kontrolü
+                // Oyun (App) Güncelleme Kontrolü
                 UpdateStatus("Uygulama versiyonu kontrol ediliyor...");
-                bool isGameNew = _gameVersion.Version > _localManifest.game.Version;
-                bool isMandotary = _gameVersion.IsMandatory;
-
-                if (_gameVersion.MinVersion != null)
+                
+                if (_appService.RequiresUpdate(_gameVersion, _localManifest.game))
                 {
-                    if (_gameVersion.MinVersion > _localManifest.game.Version)
-                        isMandotary = true;
-                }
+                    bool isMandatory = _appService.IsMandatoryUpdate(_gameVersion, _localManifest.game);
 
-                if (isGameNew)
-                {
-                    if (isMandotary)
+                    if (isMandatory)
                     {
-                        await DownloadAndInstallUpdateAsync();
+                        await UpdateGameAsync();
                     }
                     else
                     {
                         var result = MessageBox.Show(
-                         $"Yeni bir güncelleme mevcut (v{_gameVersion.Version}).\n" +
+                         $"Yeni bir güncelleme mevcut (v{_gameVersion?.Version}).\n" +
                          "Şimdi güncellemek ister misiniz?\n\n" +
                          "(Hayır derseniz mevcut sürümle uygulamaya girebilirsiniz.)",
                          "Güncelleme Mevcut",
@@ -258,7 +199,7 @@ namespace GameLauncher
 
                         if (result == MessageBoxResult.Yes)
                         {
-                            await DownloadAndInstallUpdateAsync();
+                            await UpdateGameAsync();
                         }
                         else
                         {
@@ -273,171 +214,52 @@ namespace GameLauncher
 
                 ShowPlayButton();
             }
-            catch (IOException ex)
+            catch (IOException)
             {
-                _logger.LogWarning(ex, "Oyun güncellemesi sırasında dosyalar kilitliydi.");
                 UpdateStatus("Dosyalar kilitli!", isOffline: true);
                 MessageBox.Show("Oyun dosyaları şu anda başka bir program tarafından kullanılıyor.\n\nLütfen oyunun kapalı olduğundan emin olun ve tekrar deneyin.",
                                 "Dosya Kilitli", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
-                _logger.LogWarning(ex, "Oyun güncellemesi sırasında erişim reddedildi.");
                 UpdateStatus("Erişim engellendi!", isOffline: true);
                 MessageBox.Show("Dosyalara erişim izni yok. Antivirüs programınız kurulumu engelliyor olabilir veya Launcher'ı Yönetici olarak çalıştırmanız gerekebilir.",
                                 "Erişim Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            catch (Exception ex)
+            catch (UpdateFailedException ex)
             {
-                if (ex.Message.Contains("3 kez"))
-                {
-                    _logger.LogWarning(ex, "Dosya indirme 3 denemeden sonra hala başarısız.");
-                    UpdateStatus("Bağlantı veya disk sorunu", isOffline: true);
-                    MessageBox.Show(ex.Message, "İndirme Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    // KAPANMIYOR, kullanıcı Retry butonuna basabilir.
-                }
-                else
-                {
-                    _logger.LogCritical(ex, "Uygulama başlatılırken kritik bir hata oluştu.");
-                    UpdateStatus("Kritik Hata Oluştu!");
-                    MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}", "Kritik Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Application.Current.Shutdown();
-                }
+                // Bilgi: Domain servislerin fırlattığı bilinen uygulama güncelleme hataları. (Örn: URL yok, doğrulanamadı vb.)
+                UpdateStatus("Güncelleme Hatası!", isOffline: true);
+                MessageBox.Show(ex.Message, "Güncelleme Başarısız", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-        }
-
-        private async Task CleanupOldUpdaterFiles()
-        {
-            try
+            catch (HttpRequestException)
             {
-                string[] oldFiles = {
-                    UPDATER_EXE,
-                    "Updater.pdb",
-                    "Updater.deps.json",
-                    "Updater.runtimeconfig.json"
-                };
-
-                foreach (var fileName in oldFiles)
-                {
-                    string filePath = Path.Combine(_appDirectory, fileName);
-                    await _fileService.DeleteFileAsync(filePath);
-                }
+                // Bilgi: Ağ kesintileri doğrudan bu bloğa düşer. Uygulama çökmez, kullanıcı uyarılır.
+                UpdateStatus("Ağ bağlantısı koptu!", isOffline: true);
+                MessageBox.Show("İndirme veya sistem güncelleme esnasında internet bağlantınız kesildi.\nLütfen internetinizi kontrol edip Yeniden Dene butonuna basınız.", "Bağlantı Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (TaskCanceledException)
+            {
+                // Bilgi: Sunucu aniden yanıt vermeyi keserse ve timeout olursa buraya düşer. Uygulama çökmez.
+                UpdateStatus("Sunucu zaman aşımı!", isOffline: true);
+                MessageBox.Show("Sunucu ile bağlantı sağlanırken zaman aşımına uğradı.\nLütfen daha sonra tekrar deneyin.", "Timeout Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Eski dosyalar silinemedi");
+                _logger.LogCritical(ex, "Uygulama başlatılırken öngörülemeyen kritik bir hata oluştu.");
+                UpdateStatus("Kritik Hata Oluştu!");
+                MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}", "Kritik Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
             }
         }
 
-        /// <summary>
-        /// Downloads the latest update package, verifies its integrity, creates a backup of the current installation,
-        /// and installs the update asynchronously.
-        /// </summary>
-        /// <remarks>This method updates the application by downloading the update package from the URL
-        /// specified in the current manifest, verifying its SHA-256 hash if provided, backing up the existing
-        /// installation, and extracting the new files. The method also updates the local manifest to reflect the new
-        /// version. Progress and status updates are reported during the operation. Temporary files created during the
-        /// process are deleted upon completion.</remarks>
-        /// <returns>A task that represents the asynchronous download and installation operation.</returns>
-        /// <exception cref="Exception">Thrown if the downloaded file fails integrity verification or if an error occurs during the download or
-        /// installation process.</exception>
-        private async Task DownloadAndInstallUpdateAsync()
+        private async Task UpdateGameAsync()
         {
-            var tempFileName = $"{APP_NAME}_${Guid.NewGuid()}_update.zip";
-            var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
-
-            int maxRetryCount = 3;
-            bool isVerified = false;
-
-            try
-            {
-                var progressHandler = new Progress<DownloadState>(state =>
-                {
-                    DownloadProgress.Value = state.Percentage;
-                    PercentageText.Text = $"%{state.Percentage:F0}";
-                    SpeedText.Text = $"{state.SpeedMBps:F2}MB/s";
-                });
-
-                for (int attempt = 1; attempt <= maxRetryCount; attempt++)
-                {
-                    try
-                    {
-                        UpdateStatus(attempt > 1 ? $"Yeniden indiriliyor... (Deneme {attempt}/{maxRetryCount})" : $"İndiriliyor... v{_gameVersion.Version}");
-
-                        await _networkService.DownloadFilesAsync(_gameVersion.DownloadUrl, tempZipPath, progressHandler);
-
-                        UpdateStatus("Dosya doğrulanıyor...");
-                        isVerified = await _fileService.VerifyFileHashAsync(tempZipPath, _gameVersion.ChecksumSha256);
-
-                        if (isVerified)
-                        {
-                            break;
-                       
-                        } 
-                        else
-                        {
-                            UpdateStatus("Bozuk dosya tespit edildi, temizleniyor...");
-                            await _fileService.DeleteFileAsync(tempZipPath);
-                        }
-
-                    }
-                    catch (HttpRequestException) 
-                    {
-                        if (attempt == maxRetryCount) throw;
-                        await Task.Delay(1000);
-                    }
-                }
-
-                if (!isVerified)
-                {
-                    throw new Exception("Güncelleme dosyası 3 kez indirilmesine rağmen doğrulanamadı. İnternet bağlantınızda veya diskte bir sorun olabilir.");
-                }
-
-                // Güncelleme yapmadan önce yedekleme işlemini başlatıyoruz.
-                UpdateStatus("Yedekleme yapılıyor...");
-                await _fileService.CreateBackupAsync(_gameDirectory, _backupDirectory);
-
-                // Eski dosyalar siliniyor...
-                UpdateStatus("Temizleniyor...");
-                await _fileService.CleanDirectoryAsync(_gameDirectory);
-
-                UpdateStatus("Kuruluyor...");
-                await _fileService.ExtractZipAsync(tempZipPath, _gameDirectory, overwrite: true);
-
-                _localManifest.game = _gameVersion;
-                await SaveLocalManifestAsync();
-
-                UpdateStatus("Güncelleme tamamlandı!");
-                await Task.Delay(1000);
-
-            }
-            finally
-            {
-                // En son indirilen geçici dosyayı sil!
-                await _fileService.DeleteFileAsync(tempZipPath);
-            }
-        }
-
-        private static void CopyDirectoryRecursive(string sourceDir, string destDir)
-        {
-            var dir = new DirectoryInfo(sourceDir);
-
-            if (!Directory.Exists(destDir))
-            {
-                Directory.CreateDirectory(destDir);
-            }
-
-            foreach (FileInfo file in dir.GetFiles())
-            {
-                string targetFilePath = Path.Combine(destDir, file.Name);
-                file.CopyTo(targetFilePath, true);
-            }
-
-            foreach (DirectoryInfo subDir in dir.GetDirectories())
-            {
-                string newDestDir = Path.Combine(destDir, subDir.Name);
-                CopyDirectoryRecursive(subDir.FullName, newDestDir);
-            }
+            UpdateStatus($"Güncelleniyor... v{_gameVersion?.Version}");
+            await _appService.DownloadAndInstallUpdateAsync(_gameVersion!, _localManifest, _gameDirectory, _backupDirectory, _progressReporter);
+            await SaveLocalManifestAsync();
+            UpdateStatus("Güncelleme tamamlandı!");
+            await Task.Delay(1000);
         }
 
         private async Task<bool> CheckInternetConnectionAsync()
@@ -449,73 +271,68 @@ namespace GameLauncher
         private void HandleNoInternetConnection()
         {
             UpdateStatus("İnternet bağlantısı yok", isOffline: true);
-
             var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
             bool appExists = File.Exists(exePath);
 
-            if (appExists)
-            {
-                try
-                {
-                    LaunchMainApplication();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "İnternet bağlantısı yok iken uygulama başlatılamadı.");
-                    MessageBox.Show($"Uygulama başlatılamadı: {ex.Message}", "Hata",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
+            if (appExists) TryLaunchGame();
             else
             {
                 MessageBox.Show(
                     "İnternet bağlantısı bulunamadı.\n\n" +
                     "Uygulamanın çalışabilmesi için ilk kurulumun yapılması gerekmektedir.\n" +
                     "Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
-                    "Bağlantı Gerekli",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
-
+                    "Bağlantı Gerekli", MessageBoxButton.OK, MessageBoxImage.Error);
                 Application.Current.Shutdown();
             }
         }
 
-        private void LaunchMainApplication()
+        private async void TryLaunchGame()
         {
-            var exePath = Path.Combine(_gameDirectory, MAIN_EXE);
-
-            if (!File.Exists(exePath))
+            var result = _appLauncherService.LaunchApplication(_gameDirectory, MAIN_EXE);
+            if (result.IsSuccess)
             {
-                throw new FileNotFoundException("Ana uygulama bulunamadı!", exePath);
+                Task.Delay(500).ContinueWith(_ => Dispatcher.Invoke(() => Application.Current.Shutdown()));
             }
-
-            var startInfo = new ProcessStartInfo
+            else if (result.RequiresAutoRepair)
             {
-                FileName = exePath,
-                WorkingDirectory = _gameDirectory,
-                UseShellExecute = true,
-                CreateNoWindow = false
-            };
-
-            Process.Start(startInfo);
-
-            Task.Delay(500).ContinueWith(_ =>
+                _logger.LogError("Uygulama başlatılamadı. Otomatik onarım döngüsü tetiklendi.");
+                try
+                {
+                    UpdateStatus("Uygulama başlatılamıyor, otomatik onarım süreci başladı...");
+                    if (_gameVersion != null)
+                    {
+                        await UpdateGameAsync();
+                        _appLauncherService.MarkRepairCompleted(_gameDirectory);
+                        TryLaunchGame(); 
+                    }
+                    else
+                    {
+                        _logger.LogError("Onarım için sürüm bilgisi alınamadı (İnternet bağlantısı yok veya API çökmüş).");
+                        UpdateStatus("Onarım için sürüm bilgisi alınamadı", isOffline: true);
+                        MessageBox.Show("Internet bağlantınız olmadığı için onarım başlatılamıyor.", "Bağlantı Gerekli", MessageBoxButton.OK, MessageBoxImage.Error);
+                        Application.Current.Shutdown();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Otomatik onarım süreci sırasında beklenmeyen bir hata oluştu.");
+                    MessageBox.Show($"Onarım başarısız oldu: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                    UpdateStatus("Onarım Başarısız!", isOffline: true);
+                    Application.Current.Shutdown();
+                }
+            }
+            else if (result.IsUnrepairableSystemError)
             {
-                Dispatcher.Invoke(() => Application.Current.Shutdown());
-            });
-        }
-
-        private async Task DownloadFileAsync(string url, string destinationPath)
-        {
-            var progressHandler = new Progress<DownloadState>(state =>
+                _logger.LogError("Kritik Sistem Uyumsuzluğu: Oyun dosyaları sağlam/onarılmış olmasına rağmen başlatılamıyor.");
+                MessageBox.Show(result.ErrorMessage, result.ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
+            }
+            else
             {
-                DownloadProgress.Value = state.Percentage;
-                PercentageText.Text = $"%{state.Percentage:F0}";
-                SpeedText.Text = $"{state.SpeedMBps:F2} MB/s";
-            });
-            
-            await _networkService.DownloadFilesAsync(url, destinationPath, progressHandler);
+                _logger.LogError("Uygulama başlatılamadı: {ErrorMessage}", result.ErrorMessage);
+                MessageBox.Show(result.ErrorMessage, result.ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
+                Application.Current.Shutdown();
+            }
         }
 
         private async Task LoadLocalManifestAsync()
@@ -525,7 +342,7 @@ namespace GameLauncher
                 try
                 {
                     string json = await File.ReadAllTextAsync(_localVersionFile);
-                    _localManifest = JsonSerializer.Deserialize<ServerManifest>(json);
+                    _localManifest = JsonSerializer.Deserialize<ServerManifest>(json) ?? new ServerManifest();
 
                     _localManifest.launcher ??= new AppVersionDto { Version = new Version("0.0.0") };
                     _localManifest.updater ??= new AppVersionDto { Version = new Version("0.0.0") };
@@ -533,29 +350,17 @@ namespace GameLauncher
                 }
                 catch
                 {
-                    _localManifest = _localManifest = new ServerManifest
-                    {
-                        launcher = new AppVersionDto { Version = new Version("0.0.0") },
-                        updater = new AppVersionDto { Version = new Version("0.0.0") },
-                        game = new AppVersionDto { Version = new Version("0.0.0") }
-                    };
+                    _localManifest = new ServerManifest();
                 }
             }
             else
             {
-                _localManifest = new ServerManifest
-                {
-                    launcher = new AppVersionDto { Version = new Version("0.0.0") },
-                    updater = new AppVersionDto { Version = new Version("0.0.0") },
-                    game = new AppVersionDto { Version = new Version("0.0.0") }
-                };
+                _localManifest = new ServerManifest();
             }
 
-            Dispatcher.Invoke(() =>
-            {
-                VersionText.Text = $"v{_localManifest.game.Version}";
-            });
+            Dispatcher.Invoke(() => VersionText.Text = $"v{_localManifest.game.Version}");
         }
+
         private async Task SaveLocalManifestAsync()
         {
             var options = new JsonSerializerOptions { WriteIndented = true };
@@ -591,11 +396,7 @@ namespace GameLauncher
                 manifestDirty = true;
             }
 
-            if (manifestDirty)
-            {
-                return SaveLocalManifestAsync();
-            }
-          
+            if (manifestDirty) return SaveLocalManifestAsync();
             return Task.CompletedTask;
         }
 
@@ -615,81 +416,32 @@ namespace GameLauncher
             Dispatcher.Invoke(() =>
             {
                 StatusText.Text = message;
-
-                if (isOffline)
-                {
-                    RetryButton.Visibility = Visibility.Visible;
-
-                }
-                else
-                {
-                    RetryButton.Visibility = Visibility.Collapsed;
-
-                }
+                RetryButton.Visibility = isOffline ? Visibility.Visible : Visibility.Collapsed;
             });
         }
 
-        private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
-            }
+            if (e.ChangedButton == MouseButton.Left) DragMove();
         }
 
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Application.Current.Shutdown();
-        }
+        private void CloseButton_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
 
-        private void PlayButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                LaunchMainApplication();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Ana uygulama Başlat butonu üzerinden başlatılamadı.");
-                MessageBox.Show($"Uygulama başlatılamadı: {ex.Message}", "Hata",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        private void PlayButton_Click(object sender, RoutedEventArgs e) => TryLaunchGame();
 
         private async void RetryButton_Click(object sender, RoutedEventArgs e)
         {
             RetryButton.IsEnabled = false;
             RetryButton.Visibility = Visibility.Collapsed;
-
             UpdateStatus("Yeniden bağlanmaya çalışılıyor...");
             DownloadProgress.Value = 0;
             PercentageText.Text = "%0";
             SpeedText.Text = "0 MB/s";
 
-            try
-            {
-                await InitializeAsync();
-            }
-            finally
-            {
-                // 4. İşlem bittiğinde (başarılı ya da başarısız) butonu tekrar aktif et.
-                // (Eğer başarılı olursa zaten InitializeAsync içindeki ShowPlayButton() butonu gizleyecektir)
-                RetryButton.IsEnabled = true;
-            }
+            try { await InitializeAsync(); }
+            finally { RetryButton.IsEnabled = true; }
         }
 
-        private void BottomButton_Click(object sender, RoutedEventArgs e)
-        {
-            this.WindowState = WindowState.Minimized;
-        }
-
-    }
-    public class ServerManifest
-    {
-        public AppVersionDto launcher { get; set; }
-        public AppVersionDto updater { get; set; }
-        public AppVersionDto game { get; set; }
-        public DateTime lastUpdated { get; set; }
-        public bool initalRelease { get; set; }
+        private void BottomButton_Click(object sender, RoutedEventArgs e) => this.WindowState = WindowState.Minimized;
     }
 }

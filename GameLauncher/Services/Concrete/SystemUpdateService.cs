@@ -1,0 +1,173 @@
+using GameLauncher.Entites;
+using GameLauncher.Services.Abstract;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace GameLauncher.Services.Concrete
+{
+    public class SystemUpdateService : ISystemUpdateService
+    {
+        private const string UPDATER_NAME = "Updater";
+        private const string UPDATER_EXE = "Updater.exe";
+        private const string LAUNCHER_NAME = "GameLauncher";
+
+        private readonly ILogger<SystemUpdateService> _logger;
+        private readonly INetworkService _networkService;
+        private readonly IFileService _fileService;
+
+        public SystemUpdateService(ILogger<SystemUpdateService> logger, INetworkService networkService, IFileService fileService)
+        {
+            _logger = logger;
+            _networkService = networkService;
+            _fileService = fileService;
+        }
+
+        public async Task<bool> CheckAndUpdateSystemComponentsAsync(
+            AppVersionDto? launcherVersion, 
+            AppVersionDto? updaterVersion, 
+            ServerManifest localManifest, 
+            string appDirectory,
+            string updaterDirectory,
+            IProgress<DownloadState> progressReporter)
+        {
+            // 1. Updater Güncellemesi Kontrolü
+            bool updaterRequiresUpdate = ShouldUpdate(updaterVersion, localManifest.updater);
+            if (updaterRequiresUpdate)
+            {
+                _logger.LogInformation("Updater için yeni bir sürüm bulundu veya zorunlu düşürme(downgrade) istendi.");
+                await UpdateUpdaterAsync(updaterVersion!, localManifest, appDirectory, updaterDirectory, progressReporter);
+            }
+
+            // 2. Launcher Güncellemesi Kontrolü
+            bool launcherRequiresUpdate = ShouldUpdate(launcherVersion, localManifest.launcher);
+            if (launcherRequiresUpdate)
+            {
+                _logger.LogInformation("Launcher için yeni bir sürüm bulundu veya zorunlu düşürme(downgrade) istendi.");
+                await UpdateLauncherAsync(launcherVersion!, appDirectory, updaterDirectory, progressReporter);
+                return true; // İşlem bittiğinde uygulamanın kapanması gerektiğini belirtmek için true döneriz.
+            }
+
+            return false;
+        }
+
+        private bool ShouldUpdate(AppVersionDto? newVersion, AppVersionDto currentVersion)
+        {
+            if (newVersion == null) return false;
+
+            if (newVersion.Critical) return true;
+
+            return newVersion.Version > currentVersion.Version;
+        }
+
+        private async Task UpdateUpdaterAsync(
+            AppVersionDto updaterVersion, 
+            ServerManifest localManifest, 
+            string appDirectory,
+            string updaterDirectory,
+            IProgress<DownloadState> progressReporter)
+        {
+            var tempFileName = $"{UPDATER_NAME}_{Guid.NewGuid()}_update.zip";
+            var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
+
+            try
+            {
+                if (string.IsNullOrEmpty(updaterVersion.DownloadUrl))
+                {
+                    throw new UpdateFailedException("Updater indirme url'i boş.");
+                }
+
+                await _networkService.DownloadFilesAsync(updaterVersion.DownloadUrl, tempZipPath, progressReporter);
+
+                if (Directory.Exists(updaterDirectory))
+                {
+                    Directory.Delete(updaterDirectory, true);
+                }
+
+                await _fileService.ExtractZipAsync(tempZipPath, updaterDirectory);
+
+                // Geriye dönük uyumluluk: Eski sistemlerde Updater ana dizine kuruluyordu, onları temizle
+                await CleanupOldUpdaterFiles(appDirectory);
+
+                localManifest.updater.Version = updaterVersion.Version;
+                localManifest.updater.DownloadUrl = updaterVersion.DownloadUrl;
+                localManifest.updater.ChecksumSha256 = updaterVersion.ChecksumSha256;
+                localManifest.updater.Size = updaterVersion.Size;
+            }
+            finally
+            {
+                if (File.Exists(tempZipPath))
+                {
+                    try { File.Delete(tempZipPath); } catch { /* Windows halleder */ }
+                }
+            }
+        }
+
+        private async Task UpdateLauncherAsync(
+            AppVersionDto launcherVersion,
+            string appDirectory,
+            string updaterDirectory,
+            IProgress<DownloadState> progressReporter)
+        {
+            var tempFileName = $"{LAUNCHER_NAME}_${Guid.NewGuid()}_launcher.zip";
+            var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
+
+            try
+            {
+                if (string.IsNullOrEmpty(launcherVersion.DownloadUrl))
+                {
+                    throw new UpdateFailedException("Launcher indirme url'i boş.");
+                }
+
+                await _networkService.DownloadFilesAsync(launcherVersion.DownloadUrl, tempZipPath, progressReporter);
+
+                string updaterExe = Path.Combine(updaterDirectory, UPDATER_EXE);
+                
+                if (!File.Exists(updaterExe))
+                {
+                    throw new FileNotFoundException($"Kritik Hata: Updater.exe bulunamadı: {updaterExe}");
+                }
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = updaterExe,
+                    Arguments = $"/mode:launcher /source:\"{tempZipPath}\" /target:\"{appDirectory}\" /pid:{Process.GetCurrentProcess().Id}",
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(updaterExe)
+                };
+
+                Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Launcher güncelleme dosyası indirilemedi veya Updater başlatılamadı.");
+                throw;
+            }
+        }
+
+        private async Task CleanupOldUpdaterFiles(string appDirectory)
+        {
+            try
+            {
+                string[] oldFiles = {
+                    UPDATER_EXE,
+                    "Updater.pdb",
+                    "Updater.deps.json",
+                    "Updater.runtimeconfig.json"
+                };
+
+                foreach (var fileName in oldFiles)
+                {
+                    string filePath = Path.Combine(appDirectory, fileName);
+                    await _fileService.DeleteFileAsync(filePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Geriye dönük uyumluluk için aranan eski updater dosyaları (ana dizinde) silinemedi.");
+            }
+        }
+    }
+}

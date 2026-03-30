@@ -1,3 +1,4 @@
+using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
 using Microsoft.Extensions.Logging;
 using System;
@@ -239,6 +240,4 @@ namespace GameLauncher.Services.Concrete
             }
         }
     }
-
-    public record DownloadState(double Percentage, double SpeedMBps);
 }
