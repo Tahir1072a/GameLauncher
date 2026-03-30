@@ -78,7 +78,7 @@ namespace GameLauncher.Tests
             _mockFileService.Setup(f => f.VerifyFileHashAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync(false);
             
             // Act & Assert
-            var ex = await Assert.ThrowsAsync<Exception>(() => 
+            var ex = await Assert.ThrowsAsync<UpdateFailedException>(() => 
                 _appService.DownloadAndInstallUpdateAsync(gameVersion, localManifest, "dummy/game", "dummy/backup", new Progress<DownloadState>()));
 
             Assert.Contains("3 kez", ex.Message);
