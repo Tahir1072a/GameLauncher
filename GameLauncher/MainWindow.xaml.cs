@@ -315,7 +315,8 @@ namespace GameLauncher
             var result = _appLauncherService.LaunchApplication(_gameDirectory, MAIN_EXE);
             if (result.IsSuccess)
             {
-                Task.Delay(500).ContinueWith(_ => Dispatcher.Invoke(() => Application.Current.Shutdown()));
+                await Task.Delay(500);
+                Application.Current.Shutdown();
             }
             else if (result.RequiresAutoRepair)
             {

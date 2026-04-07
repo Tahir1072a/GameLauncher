@@ -72,7 +72,15 @@ namespace GameLauncher.Services.Concrete
                         // We rely on caller to pass a progress reporter, the caller might inject "Yeniden indiriliyor" text directly in the progress reporter's wrapper, but here we just pass it along
                         await _networkService.DownloadFilesAsync(gameVersion.DownloadUrl, tempZipPath, progressReporter);
 
-                        isVerified = await _fileService.VerifyFileHashAsync(tempZipPath, gameVersion.ChecksumSha256);
+                        if (string.IsNullOrEmpty(gameVersion.ChecksumSha256))
+                        {
+                            _logger.LogWarning("Sunucudan hash bilgisi gelmedi, doğrulama atlanıyor.");
+                            isVerified = true;
+                        }
+                        else
+                        {
+                            isVerified = await _fileService.VerifyFileHashAsync(tempZipPath, gameVersion.ChecksumSha256);
+                        }
 
                         if (isVerified)
                         {
