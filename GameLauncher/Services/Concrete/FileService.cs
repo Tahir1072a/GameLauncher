@@ -191,7 +191,7 @@ namespace GameLauncher.Services.Concrete
                     }
                     catch (IOException ex) when (attempt < maxRetries)
                     {
-                        _logger.LogWarning(ex, $"Dosya kilitli, {attempt * 1000}ms sonra yeniden denenecek. Deneme: {Attempt}/{Max}");
+                        _logger.LogWarning(ex, $"Dosya kilitli, {attempt * 1000}ms sonra yeniden denenecek. Deneme: {attempt}/{maxRetries}");
                         Thread.Sleep(attempt * 1000);
                     }
                     catch (IOException ex)
