@@ -5,7 +5,7 @@ namespace GameLauncher.Exceptions
         public string FilePath { get; private set; }
         public FileServiceOperation Operation { get; set; }
 
-        public FileServiceException(string message, FileServiceOperation operation, string filePath, Exception inner = null) : base(message)
+        public FileServiceException(string message, FileServiceOperation operation, string filePath, Exception inner = null) : base(message, inner)
         {
             FilePath = filePath;
             Operation = operation;

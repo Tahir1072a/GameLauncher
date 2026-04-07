@@ -191,11 +191,11 @@ namespace GameLauncher.Services.Concrete
 
                 while (true)
                 {
-                    // Veri geldikçe bu sayaç yeniden 40 saniyeye kurulacak. (TaskCanceledException)
-                    cts.CancelAfter(TimeSpan.FromSeconds(40)); 
+                    // Veri geldikçe bu sayaç yeniden 45 saniyeye kurulacak. (TaskCanceledException)
+                    cts.CancelAfter(TimeSpan.FromSeconds(45)); 
 
                     bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
-                    if (bytesRead == 0) break; // Sunucu normal şekilde veri akışının bittiğini bildirdi
+                    if (bytesRead == 0) break;
 
                     await fileStream.WriteAsync(buffer, 0, bytesRead, cts.Token);
                     totalRead += bytesRead;

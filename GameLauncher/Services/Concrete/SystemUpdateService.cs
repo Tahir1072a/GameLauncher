@@ -47,7 +47,7 @@ namespace GameLauncher.Services.Concrete
             {
                 _logger.LogInformation("Launcher için yeni bir sürüm bulundu veya zorunlu düşürme(downgrade) istendi.");
                 await UpdateLauncherAsync(launcherVersion!, appDirectory, updaterDirectory, progressReporter);
-                return true; // İşlem bittiğinde uygulamanın kapanması gerektiğini belirtmek için true döneriz.
+                return true;
             }
 
             return false;
@@ -111,7 +111,7 @@ namespace GameLauncher.Services.Concrete
             string updaterDirectory,
             IProgress<DownloadState> progressReporter)
         {
-            var tempFileName = $"{LAUNCHER_NAME}_${Guid.NewGuid()}_launcher.zip";
+            var tempFileName = $"{LAUNCHER_NAME}_{Guid.NewGuid()}_launcher.zip";
             var tempZipPath = Path.Combine(Path.GetTempPath(), tempFileName);
 
             try
@@ -138,7 +138,49 @@ namespace GameLauncher.Services.Concrete
                     WorkingDirectory = Path.GetDirectoryName(updaterExe)
                 };
 
-                Process.Start(startInfo);
+                const int maxAttempts = 3;
+
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    _logger.LogInformation("Updater.exe başlatılıyor... Deneme: {Attempt}/{Max}", attempt, maxAttempts);
+
+                    var process = Process.Start(startInfo);
+
+                    if (process == null)
+                    {
+                        _logger.LogWarning("Process.Start() null döndü. Deneme: {Attempt}/{Max}", attempt, maxAttempts);
+
+                        if (attempt == maxAttempts)
+                            throw new UpdateFailedException("Updater.exe başlatılamadı. Process.Start() null döndü. Antivirüs yazılımınız engellemiş olabilir.");
+
+                        await Task.Delay(500);
+                        continue;
+                    }
+
+                    await Task.Delay(500 * attempt);
+
+                    if (process.HasExited)
+                    {
+                        _logger.LogWarning(
+                            "Updater.exe başlatıldı ama hemen kapandı. ExitCode: {ExitCode}, Deneme: {Attempt}/{Max}",
+                            process.ExitCode, attempt, maxAttempts);
+
+                        if (attempt == maxAttempts)
+                            throw new UpdateFailedException(
+                                $"Updater.exe {maxAttempts} denemede de başlatıldıktan hemen sonra kapandı (ExitCode: {process.ExitCode}). " +
+                                "Antivirüs programınız engellemiş olabilir veya sistem dosyalarında bir sorun var.");
+
+                        await Task.Delay(500);
+                        continue;
+                    }
+
+                    _logger.LogInformation("Updater.exe başarıyla başlatıldı ve çalışıyor. PID: {PID}", process.Id);
+                    return;
+                }
+            }
+            catch (UpdateFailedException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

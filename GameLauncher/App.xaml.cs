@@ -39,7 +39,7 @@ namespace GameLauncher
                 {
                     options.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
                     options.MinimumBreadcrumbLevel = LogLevel.Information;
-                    options.MinimumEventLevel = LogLevel.Error;
+                    options.MinimumEventLevel = LogLevel.Information;
                 });
             });
 
@@ -47,7 +47,7 @@ namespace GameLauncher
             {
                 client.BaseAddress = new Uri("https://versioncontrolmanagement-production.up.railway.app");
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
-                client.Timeout = TimeSpan.FromSeconds(30);
+                client.Timeout = TimeSpan.FromSeconds(60);
             });
 
             services.AddTransient<IFileService, FileService>();
@@ -55,7 +55,7 @@ namespace GameLauncher
             services.AddHttpClient<INetworkService, NetworkService>(client =>
             {
                 client.BaseAddress = new Uri("https://files.aviotest.org");
-                client.Timeout = TimeSpan.FromSeconds(45);
+                client.Timeout = TimeSpan.FromSeconds(60);
             });
             services.AddTransient<ISystemUpdateService, SystemUpdateService>();
             services.AddTransient<IAppService, AppService>();

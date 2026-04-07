@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using GameLauncher.Exceptions;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -216,6 +217,14 @@ namespace GameLauncher
 
                 ShowPlayButton();
             }
+            catch (FileServiceException ex)
+            {
+                _logger.LogError(ex, "Dosya servisi hatası: {Operation} - {FilePath}", ex.Operation, ex.FilePath);
+                UpdateStatus("Dosya hatası!", isOffline: true);
+                MessageBox.Show(
+                    $"{ex.Message}\n\nLütfen oyunun tamamen kapalı olduğundan ve antivirüs programınızın dosyaları engellemediğinden emin olun.",
+                    "Dosya İşlem Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             catch (IOException)
             {
                 UpdateStatus("Dosyalar kilitli!", isOffline: true);
@@ -230,7 +239,6 @@ namespace GameLauncher
             }
             catch (UpdateFailedException ex)
             {
-                // Bilgi: Domain servislerin fırlattığı bilinen uygulama güncelleme hataları. (Örn: URL yok, doğrulanamadı vb.)
                 UpdateStatus("Güncelleme Hatası!", isOffline: true);
                 MessageBox.Show(ex.Message, "Güncelleme Başarısız", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
@@ -257,6 +265,20 @@ namespace GameLauncher
 
         private async Task UpdateGameAsync()
         {
+            // Oyun sürecinin kapalı olduğundan emin ol
+            string processName = System.IO.Path.GetFileNameWithoutExtension(MAIN_EXE);
+            var gameProcesses = Process.GetProcessesByName(processName);
+
+            if (gameProcesses.Length > 0)
+            {
+                MessageBox.Show(
+                    "Oyun şu anda çalışıyor. Güncelleme yapabilmek için önce oyunu kapatmanız gerekmektedir.\n\n" +
+                    "Lütfen oyunu kapatıp tekrar deneyin.",
+                    "Oyun Çalışıyor", MessageBoxButton.OK, MessageBoxImage.Warning);
+                
+                throw new UpdateFailedException("Güncelleme başlatılamadı: Oyun hâlâ çalışıyor.");
+            }
+
             UpdateStatus($"Güncelleniyor... v{_gameVersion?.Version}");
             await _appService.DownloadAndInstallUpdateAsync(_gameVersion!, _localManifest, _gameDirectory, _backupDirectory, _progressReporter);
             await SaveLocalManifestAsync();

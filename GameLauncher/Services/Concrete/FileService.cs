@@ -1,4 +1,4 @@
-﻿using GameLauncher.Exceptions;
+using GameLauncher.Exceptions;
 using GameLauncher.Services.Abstract;
 using Microsoft.Extensions.Logging;
 using System;
@@ -8,6 +8,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace GameLauncher.Services.Concrete
 {
@@ -62,16 +63,34 @@ namespace GameLauncher.Services.Concrete
                     }
                 }
 
-                if (errors.Count > 0)
-                    throw new AggregateException("Bazı dosyalar temizlenemedi.", errors);
 
                 foreach (DirectoryInfo subDir in dirInfo.GetDirectories())
                 {
                     if (!protectedFolders.Contains(subDir.Name))
                     {
-                        subDir.Delete(true);
+                        try
+                        {
+                            subDir.Delete(true);
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            _logger.LogWarning(ex, "Alt dizine erişim reddedildi: {Dir}", subDir.FullName);
+                            errors.Add(ex);
+                        }
+                        catch (IOException ex)
+                        {
+                            _logger.LogWarning(ex, "Alt dizin silinemedi (dosya kilitli olabilir): {Dir}", subDir.FullName);
+                            errors.Add(ex);
+                        }
                     }
                 }
+
+                if (errors.Count > 0)
+                    throw new FileServiceException(
+                        "Bazı dosyalar veya dizinler kilitli olduğu için temizlenemedi. Oyunun kapalı olduğundan emin olun.",
+                        FileServiceOperation.Clean,
+                        directoryPath,
+                        new AggregateException(errors));
             });
         }
 
@@ -148,34 +167,40 @@ namespace GameLauncher.Services.Concrete
         {
             return Task.Run(() =>
             {
-                try
-                {
-                    if (!File.Exists(sourceArchiveFilePath))
-                        throw new FileNotFoundException("Kaynak arşiv dosyası bulunamadı.", sourceArchiveFilePath);
+                if (!File.Exists(sourceArchiveFilePath))
+                    throw new FileServiceException("Kaynak arşiv dosyası bulunamadı.", FileServiceOperation.Extract, sourceArchiveFilePath);
 
-                    if (!Directory.Exists(extractPath))
+                if (!Directory.Exists(extractPath))
+                {
+                    Directory.CreateDirectory(extractPath);
+                }
+
+                const int maxRetries = 3;
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
+                {
+                    try
                     {
-                        Directory.CreateDirectory(extractPath);
+                        ZipFile.ExtractToDirectory(sourceArchiveFilePath, extractPath, overwrite);
+                        _logger.LogInformation("Arşiv başarıyla çıkarıldı: {Path}", extractPath);
+                        return;
                     }
-
-                    ZipFile.ExtractToDirectory(sourceArchiveFilePath, extractPath, overwrite);
-                    _logger.LogInformation("Arşiv başarıyla çıkarıldı: {Path}", extractPath);
-
-                }
-                catch (FileNotFoundException ex)
-                {
-                    _logger.LogError(ex, "Kaynak arşiv dosyası bulunamadı: {Path}", sourceArchiveFilePath);
-                    throw new FileServiceException("Kaynak arşiv dosyası bulunamadı.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
-                }
-                catch (InvalidDataException ex)
-                {
-                    _logger.LogError(ex, "Bozuk veya geçersiz bir arşiv dosyası: {Path}", sourceArchiveFilePath);
-                    throw new FileServiceException("Bozuk veya geçersiz bir arşiv dosyası.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
-                }
-                catch (IOException ex)
-                {
-                    _logger.LogError(ex, "Disk I/O hatası: {File}", sourceArchiveFilePath);
-                    throw new FileServiceException("Disk I/O hatası.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
+                    catch (InvalidDataException ex)
+                    {
+                        _logger.LogError(ex, "Bozuk veya geçersiz bir arşiv dosyası: {Path}", sourceArchiveFilePath);
+                        throw new FileServiceException("Bozuk veya geçersiz bir arşiv dosyası.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
+                    }
+                    catch (IOException ex) when (attempt < maxRetries)
+                    {
+                        _logger.LogWarning(ex, $"Dosya kilitli, {attempt * 1000}ms sonra yeniden denenecek. Deneme: {Attempt}/{Max}");
+                        Thread.Sleep(attempt * 1000);
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.LogError(ex, "Disk I/O hatası (dosya kilitli): {File}", sourceArchiveFilePath);
+                        throw new FileServiceException(
+                            "Dosyalar başka bir işlem tarafından kullanıldığı için çıkarılamadı. Oyunun kapalı olduğundan emin olun.",
+                            FileServiceOperation.Extract, sourceArchiveFilePath, ex);
+                    }
                 }
             });
         }
@@ -225,9 +250,23 @@ namespace GameLauncher.Services.Concrete
 
             foreach (FileInfo file in dir.GetFiles())
             {
+                CopyFileWithRetry(file, Path.Combine(targetDir, file.Name));
+            }
+
+            foreach (DirectoryInfo subDir in dir.GetDirectories())
+            {
+                CopyDirectoryRecursive(subDir.FullName, Path.Combine(targetDir, subDir.Name));
+            }
+        }
+
+        private void CopyFileWithRetry(FileInfo file, string destinationPath, int maxRetries = 3)
+        {
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
                 try
                 {
-                    file.CopyTo(Path.Combine(targetDir, file.Name), true);
+                    file.CopyTo(destinationPath, true);
+                    return;
                 }
                 catch (UnauthorizedAccessException ex)
                 {
@@ -236,18 +275,19 @@ namespace GameLauncher.Services.Concrete
                         FileServiceOperation.Backup,
                         file.FullName, ex);
                 }
+                catch (IOException ex) when (attempt < maxRetries)
+                {
+                    _logger.LogWarning(ex, "Dosya kilitli, yeniden deneniyor ({Attempt}/{Max}): {File}",
+                        attempt, maxRetries, file.FullName);
+                    Thread.Sleep(attempt * 500);
+                }
                 catch (IOException ex)
                 {
                     throw new FileServiceException(
-                        "Dosya kopyalanamadı.",
+                        "Dosya kopyalanamadı. Dosya başka bir işlem tarafından kullanılıyor olabilir.",
                         FileServiceOperation.Backup,
                         file.FullName, ex);
                 }
-            }
-
-            foreach (DirectoryInfo subDir in dir.GetDirectories())
-            {
-                CopyDirectoryRecursive(subDir.FullName, Path.Combine(targetDir, subDir.Name));
             }
         }
     }
