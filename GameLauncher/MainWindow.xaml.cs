@@ -315,6 +315,7 @@ namespace GameLauncher
             var result = _appLauncherService.LaunchApplication(_gameDirectory, MAIN_EXE);
             if (result.IsSuccess)
             {
+                _logger.LogWarning("Uygulama başarıyla başlatıldı.");
                 await Task.Delay(500);
                 Application.Current.Shutdown();
             }

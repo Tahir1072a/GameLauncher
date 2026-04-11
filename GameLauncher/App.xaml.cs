@@ -39,7 +39,7 @@ namespace GameLauncher
                 {
                     options.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
                     options.MinimumBreadcrumbLevel = LogLevel.Information;
-                    options.MinimumEventLevel = LogLevel.Information;
+                    options.MinimumEventLevel = LogLevel.Warning;
                 });
             });
 
