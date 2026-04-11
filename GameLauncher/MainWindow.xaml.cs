@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using GameLauncher.Exceptions;
+using GameLauncher.Entites;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -46,9 +47,9 @@ namespace GameLauncher
         private const string UPDATER_FALLBACK_URL = "https://files.aviotest.org/FallbackVersionFiles/updater_fallback.json";
 
         public MainWindow(
-            ILogger<MainWindow> logger, 
-            IVersionService versionService, 
-            INetworkService networkService, 
+            ILogger<MainWindow> logger,
+            IVersionService versionService,
+            INetworkService networkService,
             IAppLauncherService appLauncherService,
             ISystemUpdateService systemUpdateService,
             IAppService appService)
@@ -85,6 +86,17 @@ namespace GameLauncher
         {
             try
             {
+                var osVersion = Environment.OSVersion.Version;
+                if (osVersion.Major < 10)
+                {
+                    _logger.LogWarning("Desteklenmeyen işletim sistemi tespit edildi: {Version}", osVersion);
+                    MessageBox.Show(
+                        "Bu uygulama Windows 10 ve üzeri işletim sistemlerini desteklemektedir.\n\n" +
+                        $"Mevcut sisteminiz: Windows {osVersion}\n\n" +
+                        "Uygulamayı kullanmaya devam edebilirsiniz ancak güvenli bağlantı, güncelleme ve şifreleme hataları yaşayabilirsiniz.",
+                        "Desteklenmeyen İşletim Sistemi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
                 await LoadLocalManifestAsync();
                 UpdateStatus("Başlatılıyor...");
 
@@ -134,7 +146,7 @@ namespace GameLauncher
                     _launcherVersion = await _versionService.GetLatestVersionWithFallbackAsync("Launcher", "Windows", LAUNCHER_FALLBACK_URL);
                     _updaterVersion = await _versionService.GetLatestVersionWithFallbackAsync("Updater", "Windows", UPDATER_FALLBACK_URL);
                     _gameVersion = await _versionService.GetLatestVersionWithFallbackAsync("AvioTest", "Windows", GAME_FALLBACK_URL);
-                    
+
                     if (_launcherVersion != null || _updaterVersion != null || _gameVersion != null)
                     {
                         var cacheObj = new ServerManifest { launcher = _launcherVersion, updater = _updaterVersion, game = _gameVersion };
@@ -169,25 +181,27 @@ namespace GameLauncher
                 UpdateStatus("Sistem bileşenleri güncelleniyor...");
                 bool systemUpdatedAndNeedsRestart = await _systemUpdateService.CheckAndUpdateSystemComponentsAsync(
                     _launcherVersion, _updaterVersion, _localManifest, _appDirectory, _updaterDirectory, _progressReporter);
-                
+
                 if (systemUpdatedAndNeedsRestart)
                 {
                     // Uygulamayı kapat, Updater işini yapacak
                     Application.Current.Shutdown();
                     return;
                 }
-                
+
                 await SaveLocalManifestAsync(); // Updater vs güncellendiyse listeyi kaydet
 
                 // Oyun (App) Güncelleme Kontrolü
                 UpdateStatus("Uygulama versiyonu kontrol ediliyor...");
-                
+                _logger.LogInformation("Uygulama sürümü kontrol ediliyor");
+
                 if (_appService.RequiresUpdate(_gameVersion, _localManifest.game))
                 {
                     bool isMandatory = _appService.IsMandatoryUpdate(_gameVersion, _localManifest.game);
 
                     if (isMandatory)
                     {
+                        _logger.LogInformation("Zorunlu oyun güncellemesi yapılıyor.");
                         await UpdateGameAsync();
                     }
                     else
@@ -237,6 +251,13 @@ namespace GameLauncher
                 MessageBox.Show("Dosyalara erişim izni yok. Antivirüs programınız kurulumu engelliyor olabilir veya Launcher'ı Yönetici olarak çalıştırmanız gerekebilir.",
                                 "Erişim Hatası", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            catch (UpdateRolledBackException ex)
+            {
+                _logger.LogInformation("Yedeklemeden rollback yapıldı.");
+                UpdateStatus("Eski sürüme dönüldü!", isOffline: true);
+                MessageBox.Show(ex.Message, "Güncelleme İptal Edildi", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowPlayButton();
+            }
             catch (UpdateFailedException ex)
             {
                 UpdateStatus("Güncelleme Hatası!", isOffline: true);
@@ -275,7 +296,7 @@ namespace GameLauncher
                     "Oyun şu anda çalışıyor. Güncelleme yapabilmek için önce oyunu kapatmanız gerekmektedir.\n\n" +
                     "Lütfen oyunu kapatıp tekrar deneyin.",
                     "Oyun Çalışıyor", MessageBoxButton.OK, MessageBoxImage.Warning);
-                
+
                 throw new UpdateFailedException("Güncelleme başlatılamadı: Oyun hâlâ çalışıyor.");
             }
 
@@ -329,7 +350,7 @@ namespace GameLauncher
                     {
                         await UpdateGameAsync();
                         _appLauncherService.MarkRepairCompleted(_gameDirectory);
-                        TryLaunchGame(); 
+                        TryLaunchGame();
                     }
                     else
                     {

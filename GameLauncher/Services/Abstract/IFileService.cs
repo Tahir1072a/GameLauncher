@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -11,5 +11,7 @@ namespace GameLauncher.Services.Abstract
         Task CleanDirectoryAsync(string directoryPath);
         Task ExtractZipAsync(string sourceArchiveFilePath, string extractPath, bool overwrite = true);
         Task DeleteFileAsync(string filePath);
+        void IsEnoughSpaceOnDisk(long requiredSize, string drivePath);
+        Task RestoreBackupAsync(string backupPath, string targetPath);
     }
 }

@@ -94,6 +94,26 @@ namespace GameLauncher.Services.Concrete
             });
         }
 
+        public Task RestoreBackupAsync(string backupPath, string targetPath)
+        {
+            return Task.Run(async () =>
+            {
+                if (!Directory.Exists(backupPath))
+                {
+                    _logger.LogWarning("Geçerli bir yedek dizini yok: {Path}", backupPath);
+                    return;
+                }
+
+                // Hedefi tamamen temizle, eğer daha önce yarım kalmış kurulum vs varsa silinsin
+                await CleanDirectoryAsync(targetPath);
+
+                // Yedeği yerine geri kopyala
+                CopyDirectoryRecursive(backupPath, targetPath);
+                
+                _logger.LogInformation("Yedek başarıyla geri yüklendi: {Target}", targetPath);
+            });
+        }
+
         public Task CreateBackupAsync(string sourcePath, string backupPath)
         {
             return Task.Run(() =>
@@ -194,6 +214,11 @@ namespace GameLauncher.Services.Concrete
                         _logger.LogWarning(ex, $"Dosya kilitli, {attempt * 1000}ms sonra yeniden denenecek. Deneme: {Attempt}/{Max}");
                         Thread.Sleep(attempt * 1000);
                     }
+                    catch (IOException ex) when (ex.HResult == ERROR_DISK_FULL)
+                    {
+                        _logger.LogError(ex, "Diskte yeterli alan kalmadı. {Path}", extractPath);
+                        throw new FileServiceException("Oyun dosyalarını çıkarmak için yeterli alan bulunmuyor.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
+                    }
                     catch (IOException ex)
                     {
                         _logger.LogError(ex, "Disk I/O hatası (dosya kilitli): {File}", sourceArchiveFilePath);
@@ -288,6 +313,32 @@ namespace GameLauncher.Services.Concrete
                         FileServiceOperation.Backup,
                         file.FullName, ex);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Diskte yeterli yer olup olmadığını kontrol eder. Eğer yeteri kadar alan boş değilse, hata fırlatır.
+        /// </summary>
+        /// <param name="requiredSize">İndirilecek tahmini dosya boyutu. Sıkıştırılmış olduğu için pay bırakılacaktır.</param>
+        /// <param name="drivePath">Dosyanın çıkarılacağı / indirileceği konum.</param>
+        public void IsEnoughSpaceOnDisk(long requiredSize, string drivePath)
+        {
+            // %30 pay eklendi.
+            long estimatedSpaceNeeded = requiredSize + ((requiredSize * 30) / 100);
+
+            string fullPath = Path.GetFullPath(drivePath);
+            string driveRoot = Path.GetPathRoot(fullPath) ?? fullPath;
+
+            DriveInfo driveInfo = new DriveInfo(driveRoot);
+
+            if (driveInfo.AvailableFreeSpace < estimatedSpaceNeeded)
+            {
+                long missingBytes = estimatedSpaceNeeded - driveInfo.AvailableFreeSpace;
+                double missingMb = Math.Round((double)missingBytes / (1024 * 1024), 2);
+
+                throw new FileServiceException(
+                    $"İşlem için diskte alan yetersiz. Lütfen ilgili diskte en az {missingMb} MB daha yer açın.",
+                    FileServiceOperation.Extract, drivePath);
             }
         }
     }

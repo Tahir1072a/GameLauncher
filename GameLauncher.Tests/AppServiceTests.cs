@@ -110,5 +110,46 @@ namespace GameLauncher.Tests
             _mockFileService.Verify(f => f.ExtractZipAsync(It.IsAny<string>(), "dummy/game", true), Times.Once);
             _mockFileService.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Once); // finally bloğu içindeki temp silinmesi
         }
+
+        [Fact]
+        public async Task DownloadAndInstall_IfSetupFails_ShouldRollback() 
+        {
+            // 1. Arrange (Hazırlık)
+            var mockLogger = new Mock<ILogger<AppService>>();
+            var mockFileService = new Mock<IFileService>();
+            var mockNetworkService = new Mock<INetworkService>();
+
+            // Sahte (Dummy) Parametreler
+            var gameVersion = new AppVersionDto { Version = new Version("1.0.5"), DownloadUrl = "http://dummy", ChecksumSha256 = "dummy-hash" };
+            var localManifest = new ServerManifest { game = new AppVersionDto { Version = new Version("1.0.0") } };
+            string gameDirectory = "dummy/game";
+            string backupDirectory = "dummy/backup";
+            var progress = new Progress<DownloadState>();
+
+            // Hash doğrulaması başarılı geçsin ki Backup ve Kurulum aşamasına atlayabilelim
+            mockFileService.Setup(f => f.VerifyFileHashAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync(true);
+
+            // Yedekleme DOĞRU çalışsın
+            mockFileService.Setup(x => x.CreateBackupAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+
+            // Ancak Çıkarma işleminde hata patlasın (Simülasyon)
+            mockFileService.Setup(x => x.ExtractZipAsync(It.IsAny<string>(), It.IsAny<string>(), true)).ThrowsAsync(new System.IO.IOException("Simüle Edilmiş Disk Hatası"));
+            
+            // Geri Yükleme başarılı olsun
+            mockFileService.Setup(x => x.RestoreBackupAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+
+            // Eksik parametreleri de ekleyerek Servisimizi ayağa kaldırıyoruz
+            var appService = new AppService(mockLogger.Object, mockNetworkService.Object, mockFileService.Object);
+
+            // 2. Act & Assert (Uygula & Bekle)
+            await Assert.ThrowsAsync<UpdateRolledBackException>(async () => 
+            {
+                await appService.DownloadAndInstallUpdateAsync(gameVersion, localManifest, gameDirectory, backupDirectory, progress);
+            });
+
+            // 3. Verify (Doğrulama) - Geri yükleme fonksiyonunun gerçekten 1 kez tetikledi mi?
+            mockFileService.Verify(x => x.RestoreBackupAsync(backupDirectory, gameDirectory), Times.Once);
+        }
+        
     }
 }

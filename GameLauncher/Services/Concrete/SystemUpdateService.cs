@@ -26,9 +26,9 @@ namespace GameLauncher.Services.Concrete
         }
 
         public async Task<bool> CheckAndUpdateSystemComponentsAsync(
-            AppVersionDto? launcherVersion, 
-            AppVersionDto? updaterVersion, 
-            ServerManifest localManifest, 
+            AppVersionDto? launcherVersion,
+            AppVersionDto? updaterVersion,
+            ServerManifest localManifest,
             string appDirectory,
             string updaterDirectory,
             IProgress<DownloadState> progressReporter)
@@ -63,8 +63,8 @@ namespace GameLauncher.Services.Concrete
         }
 
         private async Task UpdateUpdaterAsync(
-            AppVersionDto updaterVersion, 
-            ServerManifest localManifest, 
+            AppVersionDto updaterVersion,
+            ServerManifest localManifest,
             string appDirectory,
             string updaterDirectory,
             IProgress<DownloadState> progressReporter)
@@ -78,6 +78,8 @@ namespace GameLauncher.Services.Concrete
                 {
                     throw new UpdateFailedException("Updater indirme url'i boş.");
                 }
+
+                _fileService.IsEnoughSpaceOnDisk(updaterVersion.Size ?? 0, tempZipPath);
 
                 await _networkService.DownloadFilesAsync(updaterVersion.DownloadUrl, tempZipPath, progressReporter);
 
@@ -121,10 +123,12 @@ namespace GameLauncher.Services.Concrete
                     throw new UpdateFailedException("Launcher indirme url'i boş.");
                 }
 
+                _fileService.IsEnoughSpaceOnDisk(launcherVersion.Size ?? 0, tempZipPath);
+
                 await _networkService.DownloadFilesAsync(launcherVersion.DownloadUrl, tempZipPath, progressReporter);
 
                 string updaterExe = Path.Combine(updaterDirectory, UPDATER_EXE);
-                
+
                 if (!File.Exists(updaterExe))
                 {
                     throw new FileNotFoundException($"Kritik Hata: Updater.exe bulunamadı: {updaterExe}");
