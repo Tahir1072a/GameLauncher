@@ -37,7 +37,7 @@ namespace GameLauncher
                 // ILogger logları otomatik olarak sentry'e gider.
                 builder.AddSentry(options =>
                 {
-                    options.Dsn = "https://0754fa7c132b8513c40211572bc4147e@o4511103639683072.ingest.de.sentry.io/4511103841927248";
+                    options.Dsn = "https://cee4c274e6769124e2fa35c8145bb588@o4511211760123904.ingest.de.sentry.io/4511211888836688";
                     options.MinimumBreadcrumbLevel = LogLevel.Information;
                     options.MinimumEventLevel = LogLevel.Warning;
                 });
