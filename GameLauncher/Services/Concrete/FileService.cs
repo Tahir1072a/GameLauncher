@@ -14,6 +14,9 @@ namespace GameLauncher.Services.Concrete
 {
     public class FileService : IFileService
     {
+        private const int ERROR_DISK_FULL = unchecked((int)0x80070070);
+        private const int ERROR_HANDLE_DISK_FULL = unchecked((int)0x80070027);
+
         private readonly ILogger<IFileService> _logger;
 
         public FileService(ILogger<IFileService> logger)
@@ -214,7 +217,7 @@ namespace GameLauncher.Services.Concrete
                         _logger.LogWarning(ex, $"Dosya kilitli, {attempt * 1000}ms sonra yeniden denenecek. Deneme: {attempt}/{maxRetries}");
                         Thread.Sleep(attempt * 1000);
                     }
-                    catch (IOException ex) when (ex.HResult == ERROR_DISK_FULL)
+                    catch (IOException ex) when (ex.HResult == ERROR_DISK_FULL || ex.HResult == ERROR_HANDLE_DISK_FULL)
                     {
                         _logger.LogError(ex, "Diskte yeterli alan kalmadı. {Path}", extractPath);
                         throw new FileServiceException("Oyun dosyalarını çıkarmak için yeterli alan bulunmuyor.", FileServiceOperation.Extract, sourceArchiveFilePath, ex);
