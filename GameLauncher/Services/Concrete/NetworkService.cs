@@ -192,7 +192,7 @@ namespace GameLauncher.Services.Concrete
                 while (true)
                 {
                     // Veri geldikçe bu sayaç yeniden 45 saniyeye kurulacak. (TaskCanceledException)
-                    cts.CancelAfter(TimeSpan.FromSeconds(45)); 
+                    cts.CancelAfter(TimeSpan.FromSeconds(45));
 
                     bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
                     if (bytesRead == 0) break;
@@ -234,8 +234,19 @@ namespace GameLauncher.Services.Concrete
             }
             catch (IOException ex)
             {
-                // Disk yazma hatası (disk dolu, dosya kilitli)
-                _logger.LogError(ex, "Dosya yazma hatası (disk dolu/kilitli?): {Destination}", destinationPath);
+                if (ex.InnerException is System.ComponentModel.Win32Exception win32Ex)
+                {
+                    // Win32 hatası tespit edildi, teşhis için OS bilgisini loga ekle
+                    var osVersion = Environment.OSVersion;
+                    _logger.LogError(ex, 
+                        "Win32 kaynaklı IO hatası. NativeError: {NativeError}, OS: {OS} {Version}", 
+                        win32Ex.NativeErrorCode, osVersion.Platform, osVersion.Version);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Ağ bağlantısı veya disk yazma hatası: {Destination}", destinationPath);
+                }
+
                 throw;
             }
             catch (UnauthorizedAccessException ex)

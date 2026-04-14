@@ -4,6 +4,10 @@ using System.Threading.Tasks;
 
 namespace GameLauncher.Services.Abstract
 {
+    /// <summary>
+    /// This is the service that manages all the functions related to the main game,
+    /// such as downloading, installing and verifying the game files.
+    /// </summary>
     public interface IAppService
     {
         /// <summary>
