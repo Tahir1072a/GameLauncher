@@ -141,19 +141,18 @@ namespace GameLauncher.Services.Concrete
                         {
                             _logger.LogInformation("Yedekten geri yükleniyor...");
                             await _fileService.RestoreBackupAsync(backupDirectory, gameDirectory);
-
-                            throw new UpdateRolledBackException(
-                                "Oyun güncellenirken bir sorun oluştu fakat eski dosyalara başarılı bir şekilde geri dönüldü.\n\n" +
-                                "Mevcut sürümünüzle oyuna giriş yapabilirsiniz.");
                         }
                         catch (Exception restoreEx)
                         {
                             _logger.LogCritical(restoreEx, "Kritik Hata: Kurulum başarısız oldu ve yedekten geri dönüş yapılamadı!");
-                            
                             throw new Exception(
                                 "Oyun güncellenirken kritik bir hata oluştu ve işlem yarım kaldı.\n\n" +
                                 "Lütfen uygulamayı baştan çalıştırarak Otomatik Onarım'ın devreye girmesini bekleyin veya oyunu sıfırdan kurmayı deneyin.", restoreEx);
                         }
+
+                        throw new UpdateRolledBackException(
+                            "Oyun güncellenirken bir sorun oluştu fakat eski dosyalara başarılı bir şekilde geri dönüldü.\n\n" +
+                            "Mevcut sürümünüzle oyuna giriş yapabilirsiniz.");
                     }
                     else
                     {
