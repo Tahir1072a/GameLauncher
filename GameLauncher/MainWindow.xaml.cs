@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Net.Http;
-using GameLauncher.Entites;
 using GameLauncher.Services.Abstract;
 using Microsoft.Extensions.Logging;
 
@@ -28,16 +27,17 @@ namespace GameLauncher
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
 
-        private ServerManifest _localManifest;
-        private AppVersionDto _launcherVersion;
-        private AppVersionDto _updaterVersion;
-        private AppVersionDto _gameVersion;
+        private ServerManifest _localManifest = null!;
+        private AppVersionDto? _launcherVersion;
+        private AppVersionDto? _updaterVersion;
+        private AppVersionDto? _gameVersion;
 
         private readonly INetworkService _networkService;
         private readonly IVersionService _versionService;
         private readonly IAppLauncherService _appLauncherService;
         private readonly ISystemUpdateService _systemUpdateService;
         private readonly IAppService _appService;
+        private readonly IShutdownService _shutdownService;
 
         private readonly ILogger<MainWindow> _logger;
         private readonly IProgress<DownloadState> _progressReporter;
@@ -52,7 +52,8 @@ namespace GameLauncher
             INetworkService networkService,
             IAppLauncherService appLauncherService,
             ISystemUpdateService systemUpdateService,
-            IAppService appService)
+            IAppService appService,
+            IShutdownService shutdownService)
         {
             InitializeComponent();
             _localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -67,6 +68,7 @@ namespace GameLauncher
             _appLauncherService = appLauncherService;
             _systemUpdateService = systemUpdateService;
             _appService = appService;
+            _shutdownService = shutdownService;
             _logger = logger;
 
             _progressReporter = new Progress<DownloadState>(state =>
@@ -149,7 +151,7 @@ namespace GameLauncher
 
                     if (_launcherVersion != null || _updaterVersion != null || _gameVersion != null)
                     {
-                        var cacheObj = new ServerManifest { launcher = _launcherVersion, updater = _updaterVersion, game = _gameVersion };
+                        var cacheObj = new ServerManifest { launcher = _launcherVersion!, updater = _updaterVersion!, game = _gameVersion! };
                         await File.WriteAllTextAsync(cachedVersionsFile, JsonSerializer.Serialize(cacheObj));
                     }
                 }
@@ -185,7 +187,7 @@ namespace GameLauncher
                 if (systemUpdatedAndNeedsRestart)
                 {
                     // Uygulamayı kapat, Updater işini yapacak
-                    Application.Current.Shutdown();
+                    _shutdownService.Shutdown();
                     return;
                 }
 
@@ -280,7 +282,7 @@ namespace GameLauncher
                 _logger.LogCritical(ex, "Uygulama başlatılırken öngörülemeyen kritik bir hata oluştu.");
                 UpdateStatus("Kritik Hata Oluştu!");
                 MessageBox.Show($"Beklenmeyen bir hata oluştu:\n\n{ex.Message}", "Kritik Hata", MessageBoxButton.OK, MessageBoxImage.Error);
-                Application.Current.Shutdown();
+                _shutdownService.Shutdown();
             }
         }
 
@@ -327,7 +329,7 @@ namespace GameLauncher
                     "Uygulamanın çalışabilmesi için ilk kurulumun yapılması gerekmektedir.\n" +
                     "Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
                     "Bağlantı Gerekli", MessageBoxButton.OK, MessageBoxImage.Error);
-                Application.Current.Shutdown();
+                _shutdownService.Shutdown();
             }
         }
 
@@ -338,7 +340,7 @@ namespace GameLauncher
             {
                 _logger.LogWarning("Uygulama başarıyla başlatıldı.");
                 await Task.Delay(500);
-                Application.Current.Shutdown();
+                _shutdownService.Shutdown();
             }
             else if (result.RequiresAutoRepair)
             {
@@ -357,7 +359,7 @@ namespace GameLauncher
                         _logger.LogError("Onarım için sürüm bilgisi alınamadı (İnternet bağlantısı yok veya API çökmüş).");
                         UpdateStatus("Onarım için sürüm bilgisi alınamadı", isOffline: true);
                         MessageBox.Show("Internet bağlantınız olmadığı için onarım başlatılamıyor.", "Bağlantı Gerekli", MessageBoxButton.OK, MessageBoxImage.Error);
-                        Application.Current.Shutdown();
+                        _shutdownService.Shutdown();
                     }
                 }
                 catch (Exception ex)
@@ -365,20 +367,20 @@ namespace GameLauncher
                     _logger.LogError(ex, "Otomatik onarım süreci sırasında beklenmeyen bir hata oluştu.");
                     MessageBox.Show($"Onarım başarısız oldu: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
                     UpdateStatus("Onarım Başarısız!", isOffline: true);
-                    Application.Current.Shutdown();
+                    _shutdownService.Shutdown();
                 }
             }
             else if (result.IsUnrepairableSystemError)
             {
                 _logger.LogError("Kritik Sistem Uyumsuzluğu: Oyun dosyaları sağlam/onarılmış olmasına rağmen başlatılamıyor.");
                 MessageBox.Show(result.ErrorMessage, result.ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
-                Application.Current.Shutdown();
+                _shutdownService.Shutdown();
             }
             else
             {
                 _logger.LogError("Uygulama başlatılamadı: {ErrorMessage}", result.ErrorMessage);
                 MessageBox.Show(result.ErrorMessage, result.ErrorTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
-                Application.Current.Shutdown();
+                _shutdownService.Shutdown();
             }
         }
 
@@ -472,7 +474,7 @@ namespace GameLauncher
             if (e.ChangedButton == MouseButton.Left) DragMove();
         }
 
-        private void CloseButton_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+        private void CloseButton_Click(object sender, RoutedEventArgs e) => _shutdownService.Shutdown();
 
         private void PlayButton_Click(object sender, RoutedEventArgs e) => TryLaunchGame();
 

@@ -2,7 +2,6 @@ using GameLauncher.Services.Abstract;
 using GameLauncher.Services.Concrete;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Sentry;
 using System.Configuration;
 using System.Data;
 using System.Diagnostics;
@@ -60,6 +59,9 @@ namespace GameLauncher
             services.AddTransient<ISystemUpdateService, SystemUpdateService>();
             services.AddTransient<IAppService, AppService>();
 
+            services.AddSingleton<IAppLifecycleService, SentryLifecycleService>();
+            services.AddSingleton<IShutdownService, ShutdownService>();
+
             services.AddTransient<MainWindow>();
         }
 
@@ -70,12 +72,39 @@ namespace GameLauncher
             mainWindow.Show();
         }
 
+        /// <summary>
+        /// Uygulama kapanırken tüm servisleri (Logging provider'lar dahil) temizler.
+        /// </summary>
+        protected override void OnExit(ExitEventArgs e)
+        {
+            if (ServiceProvider is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
+            base.OnExit(e);
+        }
 
         void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            var logger = ServiceProvider.GetRequiredService<ILogger<App>>();
-            logger.LogCritical(e.Exception, "Yakalanmamış/Beklenmeyen UI thread hatası");
             e.Handled = true;
+
+            try
+            {
+                var logger = ServiceProvider.GetRequiredService<ILogger<App>>();
+                logger.LogCritical(e.Exception, "Yakalanmamış/Beklenmeyen UI thread hatası");
+            }
+            catch
+            {
+                // Logger erişilemezse sessizce geç
+            }
+
+            MessageBox.Show(
+                $"Beklenmeyen bir hata oluştu:\n\n{e.Exception.Message}",
+                "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+
+            var shutdownService = ServiceProvider.GetRequiredService<IShutdownService>();
+            shutdownService.Shutdown();
         }
     }
 }

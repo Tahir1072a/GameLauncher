@@ -118,7 +118,7 @@ namespace GameLauncher.Services.Concrete
         ///     </item>
         ///   </list>
         /// </remarks>
-        public async Task DownloadFilesAsync(string url, string destinationPath, IProgress<DownloadState> progress = null)
+        public async Task DownloadFilesAsync(string url, string destinationPath, IProgress<DownloadState>? progress = null)
         {
             _logger.LogInformation("İndirme başlatılıyor: {Url} → {Destination}", url, destinationPath);
 
@@ -215,13 +215,13 @@ namespace GameLauncher.Services.Concrete
                         updateStopwatch.Restart();
 
                         var percentage = (double)totalRead / totalBytes * 100;
-                        progress.Report(new DownloadState(percentage, speedMBps));
+                        progress!.Report(new DownloadState(percentage, speedMBps));
                     }
                 }
 
                 if (canReport)
                 {
-                    progress.Report(new DownloadState(100, 0));
+                    progress!.Report(new DownloadState(100, 0));
                 }
 
                 _logger.LogInformation("İndirme tamamlandı: {TotalRead} bytes, {Destination}", totalRead, destinationPath);

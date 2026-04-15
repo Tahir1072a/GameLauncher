@@ -2,7 +2,8 @@ namespace GameLauncher.Entites;
 
 public class AppVersionDto
 {
-    public Version Version { get; set; }
+    // Sürümü olmayan bir sürüm olamaz, burada aslında nullable olmaması gerekir, bunu handle edeceğiz.
+    public Version? Version { get; set; }
     public Version? MinVersion { get; set; }
     public bool IsMandatory { get; set; }
     public bool Critical { get; set; }
