@@ -1,4 +1,5 @@
 using GameLauncher.Services.Abstract;
+using Microsoft.Extensions.Logging;
 using System.Windows;
 
 namespace GameLauncher.Services.Concrete
@@ -12,24 +13,40 @@ namespace GameLauncher.Services.Concrete
     public class ShutdownService : IShutdownService
     {
         private readonly IAppLifecycleService _lifecycle;
+        private readonly ILogger<ShutdownService> _logger;
 
-        public ShutdownService(IAppLifecycleService lifecycle)
+        public ShutdownService(IAppLifecycleService lifecycle, ILogger<ShutdownService> logger)
         {
             _lifecycle = lifecycle;
+            _logger = logger;
         }
 
         public void Shutdown()
         {
-            try
+            _logger.LogInformation("Uygulama kapatılıyor, loglar gönderiliyor...");
+
+           try
             {
-                _lifecycle.FlushAsync().GetAwaiter().GetResult();
+                var flushTask = _lifecycle.FlushAsync();
+
+                if (!flushTask.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    _logger.LogWarning("Flush timeout oldu, zorla kapatılıyor.");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // Flush başarısız olsa bile uygulamayı kapat
+                _logger.LogWarning(ex, "Flush sırasında hata oluştu.");
             }
 
-            Application.Current.Shutdown();
+            try
+            {
+                Application.Current.Shutdown();
+            }
+            finally
+            {
+                Environment.Exit(0);
+            }
         }
     }
 }
