@@ -49,7 +49,6 @@ namespace GameLauncher.Services.Concrete
             AppVersionDto gameVersion,
             ServerManifest localManifest,
             string gameDirectory,
-            string backupDirectory,
             IProgress<DownloadState> progressReporter)
         {
             var tempFileName = $"{APP_NAME}_{Guid.NewGuid()}_update.zip";
@@ -69,8 +68,8 @@ namespace GameLauncher.Services.Concrete
                             throw new UpdateFailedException("Oyun indirme url'i boş olamaz.");
                         }
 
-                        _logger.LogInformation("Oyun indirme işlemi için yer kontrolü yapılıyor.");
-                        _fileService.IsEnoughSpaceOnDisk(gameVersion.Size ?? 0, tempZipPath);
+                        _logger.LogInformation("Oyun indirme ve çıkarma işlemi için yer kontrolü yapılıyor.");
+                        _fileService.IsEnoughSpaceOnDisk((gameVersion.Size ?? 0) * 3, tempZipPath);
 
                         // We rely on caller to pass a progress reporter, the caller might inject "Yeniden indiriliyor" text directly in the progress reporter's wrapper, but here we just pass it along
                         await _networkService.DownloadFilesAsync(gameVersion.DownloadUrl, tempZipPath, progressReporter);
@@ -108,58 +107,36 @@ namespace GameLauncher.Services.Concrete
                     throw new UpdateFailedException("Güncelleme dosyası 3 kez indirilmesine rağmen doğrulanamadı. İnternet bağlantınızda veya diskte bir sorun olabilir.");
                 }
 
-                bool backupSuccessful = false;
-                try
+                var tempExtractDir = Path.Combine(Path.GetTempPath(), $"{APP_NAME}_{Guid.NewGuid()}_extract");
+
+                try 
                 {
-                    // Yedekleme 
-                    _logger.LogInformation("Uygulama klasörü yedekleniyor...");
-                    await _fileService.CreateBackupAsync(gameDirectory, backupDirectory);
-                    backupSuccessful = true;
+                    _logger.LogInformation("Güncelleme dosyaları geçici alanda hazırlanıyor (Atomic Update)...");
+                    await _fileService.ExtractZipAsync(tempZipPath, tempExtractDir, overwrite: true);
                 }
-                catch (Exception ex)
+                catch(Exception ex)
                 {
-                    _logger.LogWarning(ex, "Yedekleme sırasında hata oluştu. Kurulum yedek alınmadan devam edecek.");
+                    _logger.LogError(ex, "Güncelleme hazırlık sırasında hata oluştu. Gerçek oyun dosyaları zarar görmedi.");
+                    if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true);
+                    throw new UpdateFailedException("Güncelleme dosyaları hazırlanırken sorun oluştu. Diskinizde yeterli alan olmayabilir veya arşiv dosyası engellenmiş olabilir.", ex);
                 }
 
                 try
                 {
                     // Temizleme 
-                    _logger.LogInformation("Uygulama klasörü temizleniyor...");
+                    _logger.LogInformation("Eski sürüm dosyaları temizleniyor...");
                     await _fileService.CleanDirectoryAsync(gameDirectory);
 
-                    // Kurulum
-                    _logger.LogInformation("Uygulama klasörüne çıkartılıyor...");
-                    await _fileService.ExtractZipAsync(tempZipPath, gameDirectory, overwrite: true);
+                    // Kurulum (Yalnızca dosyaları hedefe taşıma işlemi - Anında sürer)
+                    _logger.LogInformation("Yeni versiyon kuruluyor...");
+                    await _fileService.MoveExtractedFilesAsync(tempExtractDir, gameDirectory);
                 }
-                catch (Exception extractionEx)
+                catch (Exception moveEx)
                 {
-                    _logger.LogError(extractionEx, "Çıkarma veya temizleme sırasında hata oluştu. Geri alma (Rollback) durumu değerlendiriliyor.");
-                    
-                    if (backupSuccessful)
-                    {
-                        try
-                        {
-                            _logger.LogInformation("Yedekten geri yükleniyor...");
-                            await _fileService.RestoreBackupAsync(backupDirectory, gameDirectory);
-                        }
-                        catch (Exception restoreEx)
-                        {
-                            _logger.LogCritical(restoreEx, "Kritik Hata: Kurulum başarısız oldu ve yedekten geri dönüş yapılamadı!");
-                            throw new Exception(
-                                "Oyun güncellenirken kritik bir hata oluştu ve işlem yarım kaldı.\n\n" +
-                                "Lütfen uygulamayı baştan çalıştırarak Otomatik Onarım'ın devreye girmesini bekleyin veya oyunu sıfırdan kurmayı deneyin.", restoreEx);
-                        }
-
-                        throw new UpdateRolledBackException(
-                            "Oyun güncellenirken bir sorun oluştu fakat eski dosyalara başarılı bir şekilde geri dönüldü.\n\n" +
-                            "Mevcut sürümünüzle oyuna giriş yapabilirsiniz.");
-                    }
-                    else
-                    {
-                        throw new Exception(
-                                "Oyun güncellenirken kritik bir hata oluştu ve işlem yarım kaldı.\n\n" +
-                                "Lütfen uygulamayı baştan çalıştırarak Otomatik Onarım'ın devreye girmesini bekleyin veya oyunu sıfırdan kurmayı deneyin.", extractionEx);
-                    }
+                    _logger.LogError(moveEx, "Dosyalar taşınırken veya dizin temizlenirken hata oluştu.");
+                    throw new UpdateFailedException(
+                        "Oyun dosyaları yerleştirilirken kritik bir erişim (antivirüs vb.) veya donanım hatası oluştu.\n\n" +
+                        "Lütfen uygulamayı veya bilgisayarı yeniden başlatarak launcher üzerinden onarım sürecini çalıştırın.", moveEx);
                 }
 
                 localManifest.game = gameVersion;

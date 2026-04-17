@@ -97,71 +97,6 @@ namespace GameLauncher.Services.Concrete
             });
         }
 
-        public Task RestoreBackupAsync(string backupPath, string targetPath)
-        {
-            return Task.Run(async () =>
-            {
-                if (!Directory.Exists(backupPath))
-                {
-                    _logger.LogWarning("Geçerli bir yedek dizini yok: {Path}", backupPath);
-                    return;
-                }
-
-                // Hedefi tamamen temizle, eğer daha önce yarım kalmış kurulum vs varsa silinsin
-                await CleanDirectoryAsync(targetPath);
-
-                // Yedeği yerine geri kopyala
-                CopyDirectoryRecursive(backupPath, targetPath);
-                
-                _logger.LogInformation("Yedek başarıyla geri yüklendi: {Target}", targetPath);
-            });
-        }
-
-        public Task CreateBackupAsync(string sourcePath, string backupPath)
-        {
-            return Task.Run(() =>
-            {
-                try
-                {
-                    // Oyunun ilk kez kurulduğuna işarettir bu. Yedekleme yapacak bir şey yoktur.
-                    if (!Directory.Exists(sourcePath))
-                        return;
-
-                    if (Directory.Exists(backupPath))
-                    {
-                        Directory.Delete(backupPath, true);
-                        _logger.LogInformation("Mevcut yedek dizini silindi: {Path}", backupPath);
-                    }
-
-                    Directory.CreateDirectory(backupPath);
-                    CopyDirectoryRecursive(sourcePath, backupPath);
-
-                    _logger.LogInformation("Yedek başarıyla oluşturuldu: {Path}", backupPath);
-                }
-                catch (FileNotFoundException ex)
-                {
-                    throw new FileServiceException(
-                        "Kaynak dizin bulunamadı.",
-                        FileServiceOperation.Backup,
-                        sourcePath, ex);
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    throw new FileServiceException(
-                        "Yedek dizinine erişim reddedildi.",
-                        FileServiceOperation.Backup,
-                        backupPath, ex);
-                }
-                catch (IOException ex)
-                {
-                    throw new FileServiceException(
-                        "Yedekleme sırasında disk hatası oluştu.",
-                        FileServiceOperation.Backup,
-                        backupPath, ex);
-                }
-            });
-        }
-
         public Task DeleteFileAsync(string filePath)
         {
             return Task.Run(() =>
@@ -343,6 +278,39 @@ namespace GameLauncher.Services.Concrete
                     $"İşlem için diskte alan yetersiz. Lütfen ilgili diskte en az {missingMb} MB daha yer açın.",
                     FileServiceOperation.Extract, drivePath);
             }
+        }
+        public Task MoveExtractedFilesAsync(string sourceDir, string targetDir)
+        {
+            return Task.Run(() =>
+            {
+                var source = new DirectoryInfo(sourceDir);
+                if (!source.Exists) return;
+
+                void MoveContentsRecursive(DirectoryInfo src, string tgtPath)
+                {
+                    if (!Directory.Exists(tgtPath)) Directory.CreateDirectory(tgtPath);
+
+                    foreach (var file in src.GetFiles())
+                    {
+                        string destFile = Path.Combine(tgtPath, file.Name);
+                        if (File.Exists(destFile))
+                        {
+                            if ((File.GetAttributes(destFile) & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                File.SetAttributes(destFile, FileAttributes.Normal);
+                            File.Delete(destFile);
+                        }
+                        file.MoveTo(destFile);
+                    }
+
+                    foreach (var subDir in src.GetDirectories())
+                    {
+                        MoveContentsRecursive(subDir, Path.Combine(tgtPath, subDir.Name));
+                    }
+                }
+
+                MoveContentsRecursive(source, targetDir);
+                Directory.Delete(sourceDir, true); // Taşıma bitince temp klasörünü temizle
+            });
         }
     }
 }

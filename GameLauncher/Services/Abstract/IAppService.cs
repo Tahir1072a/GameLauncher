@@ -19,7 +19,6 @@ namespace GameLauncher.Services.Abstract
             AppVersionDto gameVersion, 
             ServerManifest localManifest, 
             string gameDirectory, 
-            string backupDirectory, 
             IProgress<DownloadState> progressReporter);
 
         /// <summary>

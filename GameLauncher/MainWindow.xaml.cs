@@ -23,7 +23,6 @@ namespace GameLauncher
         private readonly string _localAppData;
         private readonly string _appDirectory;
         private readonly string _gameDirectory;
-        private readonly string _backupDirectory;
         private readonly string _localVersionFile;
         private readonly string _updaterDirectory;
 
@@ -61,7 +60,6 @@ namespace GameLauncher
             _updaterDirectory = Path.Combine(_appDirectory, "System");
             _localVersionFile = Path.Combine(_appDirectory, "version.json");
             _gameDirectory = Path.Combine(_appDirectory, "Game");
-            _backupDirectory = Path.Combine(_appDirectory, "Backups");
 
             _versionService = versionService;
             _networkService = networkService;
@@ -303,7 +301,7 @@ namespace GameLauncher
             }
 
             UpdateStatus($"Güncelleniyor... v{_gameVersion?.Version}");
-            await _appService.DownloadAndInstallUpdateAsync(_gameVersion!, _localManifest, _gameDirectory, _backupDirectory, _progressReporter);
+            await _appService.DownloadAndInstallUpdateAsync(_gameVersion!, _localManifest, _gameDirectory, _progressReporter);
             await SaveLocalManifestAsync();
             UpdateStatus("Güncelleme tamamlandı!");
             await Task.Delay(1000);
@@ -472,6 +470,21 @@ namespace GameLauncher
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton == MouseButton.Left) DragMove();
+        }
+
+        public void UpdateStatusForShutdown()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                StatusText.Text = "Kapatılıyor...";
+                DownloadProgress.Visibility = Visibility.Visible;
+                DownloadProgress.IsIndeterminate = true;
+                DownloadProgress.Value = 100;
+                PercentageText.Visibility = Visibility.Collapsed;
+                SpeedText.Visibility = Visibility.Collapsed;
+                PlayButton.Visibility = Visibility.Collapsed;
+                RetryButton.Visibility = Visibility.Collapsed;
+            });
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e) => _shutdownService.Shutdown();
