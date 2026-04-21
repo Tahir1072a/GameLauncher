@@ -293,13 +293,27 @@ namespace GameLauncher.Services.Concrete
                     foreach (var file in src.GetFiles())
                     {
                         string destFile = Path.Combine(tgtPath, file.Name);
-                        if (File.Exists(destFile))
+                        
+                        // Wait/Retry logic to avoid AV or async delete race conditions
+                        const int maxRetries = 3;
+                        for (int attempt = 1; attempt <= maxRetries; attempt++)
                         {
-                            if ((File.GetAttributes(destFile) & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
-                                File.SetAttributes(destFile, FileAttributes.Normal);
-                            File.Delete(destFile);
+                            try
+                            {
+                                if (File.Exists(destFile))
+                                {
+                                    if ((File.GetAttributes(destFile) & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                        File.SetAttributes(destFile, FileAttributes.Normal);
+                                }
+                                
+                                file.MoveTo(destFile, overwrite: true);
+                                break;
+                            }
+                            catch (IOException) when (attempt < maxRetries)
+                            {
+                                Thread.Sleep(attempt * 500);
+                            }
                         }
-                        file.MoveTo(destFile);
                     }
 
                     foreach (var subDir in src.GetDirectories())
@@ -309,7 +323,7 @@ namespace GameLauncher.Services.Concrete
                 }
 
                 MoveContentsRecursive(source, targetDir);
-                Directory.Delete(sourceDir, true); // Taşıma bitince temp klasörünü temizle
+                Directory.Delete(sourceDir, true);
             });
         }
     }
