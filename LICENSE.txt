@@ -1,21 +1,37 @@
-MIT License
+Copyright (c) 2025 Tahir Ifidan. All Rights Reserved.
 
-Copyright (c) [year] [fullname]
+PROPRIETARY SOFTWARE LICENSE
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and its source code are the exclusive property of Tahir Ifidan
+("the Author"). All rights are reserved.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+RESTRICTIONS
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+You may NOT, without prior written permission from the Author:
+
+1. Copy, reproduce, or duplicate this software or any portion of its source code.
+2. Modify, adapt, translate, or create derivative works based on this software.
+3. Distribute, sublicense, lease, rent, or lend this software to any third party.
+4. Reverse engineer, decompile, or disassemble this software.
+5. Use this software or its source code for commercial or non-commercial purposes.
+6. Remove or alter any proprietary notices, labels, or marks on this software.
+
+PERMITTED USE
+
+This source code is made publicly visible for portfolio and reference purposes only.
+Viewing the source code does not grant any license or right to use, copy, modify,
+or distribute the code in any form.
+
+DISCLAIMER
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM THE USE OR INABILITY TO USE THIS SOFTWARE.
+
+ENFORCEMENT
+
+Any unauthorized use, reproduction, or distribution of this software may result
+in civil and criminal penalties, and will be prosecuted to the maximum extent
+possible under applicable law.
+
+For licensing inquiries, please contact the Author.
