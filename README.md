@@ -1,8 +1,8 @@
-# 🎮 AvioTest Game Launcher
+# 🎮 Game Launcher
 
 <div align="center">
 
-**AvioTest ekosisteminin masaüstü başlatıcı uygulaması**
+**Masaüstü başlatıcı uygulaması**
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![WPF](https://img.shields.io/badge/WPF-Windows-0078D4?logo=windows&logoColor=white)](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/)
@@ -15,7 +15,7 @@
 
 ## 📋 Genel Bakış
 
-AvioTest Game Launcher, **AvioTest.exe** ana uygulamasının ve bağlantılı bileşenlerinin son kullanıcıya sorunsuz, güncel ve hatasız bir şekilde ulaştırılmasını sağlayan **WPF (Windows Presentation Foundation)** tabanlı bir başlatıcı (launcher) yazılımıdır.
+Ana uygulamasının ve bağlantılı bileşenlerinin son kullanıcıya sorunsuz, güncel ve hatasız bir şekilde ulaştırılmasını sağlayan **WPF (Windows Presentation Foundation)** tabanlı bir başlatıcı (launcher) yazılımıdır.
 
 ### ✨ Temel Özellikler
 
