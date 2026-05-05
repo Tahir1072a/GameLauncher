@@ -238,8 +238,8 @@ namespace GameLauncher.Services.Concrete
                 {
                     // Win32 hatası tespit edildi, teşhis için OS bilgisini loga ekle
                     var osVersion = Environment.OSVersion;
-                    _logger.LogError(ex, 
-                        "Win32 kaynaklı IO hatası. NativeError: {NativeError}, OS: {OS} {Version}", 
+                    _logger.LogError(ex,
+                        "Win32 kaynaklı IO hatası. NativeError: {NativeError}, OS: {OS} {Version}",
                         win32Ex.NativeErrorCode, osVersion.Platform, osVersion.Version);
                 }
                 else
