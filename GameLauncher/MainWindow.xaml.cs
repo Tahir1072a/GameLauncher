@@ -184,6 +184,9 @@ namespace GameLauncher
 
                 if (systemUpdatedAndNeedsRestart)
                 {
+                    // Güncellenen Updater sürümü diske yazılmazsa /post_update turunda Updater tekrar indirilip silinmeye çalışılır.
+                    await SaveLocalManifestAsync();
+
                     // Uygulamayı kapat, Updater işini yapacak
                     _shutdownService.Shutdown();
                     return;
