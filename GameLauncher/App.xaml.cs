@@ -20,6 +20,7 @@ namespace GameLauncher
         public App()
         {
             DispatcherUnhandledException += App_DispatcherUnhandledException;
+            AppDomain.CurrentDomain.UnhandledException += App_UnhandledException;
 
             var services = new ServiceCollection();
             ConfigureServices(services);
@@ -83,6 +84,24 @@ namespace GameLauncher
             }
 
             base.OnExit(e);
+        }
+
+        /// <summary>
+        /// UI thread dışındaki yakalanmamış hatalarda process'in (WER/Sentry beklemesiyle) arka planda asılı kalmasını önler.
+        /// </summary>
+        void App_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            try
+            {
+                var logger = ServiceProvider.GetRequiredService<ILogger<App>>();
+                logger.LogCritical(e.ExceptionObject as Exception, "Yakalanmamış/Beklenmeyen thread hatası");
+            }
+            catch
+            {
+                // Logger erişilemezse sessizce geç
+            }
+
+            Environment.Exit(1);
         }
 
         void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
